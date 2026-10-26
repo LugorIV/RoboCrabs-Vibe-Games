@@ -1,6 +1,6 @@
 # 🦀 RoboCrabs Vibe Games
 
-Games made by kids on [DIY.org](https://diy.org) for our STEM showcase.
+Games made by FLL Team: RoboCrabs #56774 on [DIY.org](https://diy.org) for our STEM showcase.
 
 **Play them here:** https://lugoriv.github.io/RoboCrabs-Vibe-Games/
 
