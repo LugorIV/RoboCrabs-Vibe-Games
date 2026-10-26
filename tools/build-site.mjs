@@ -65,6 +65,8 @@ for (const folder of folders) {
     .find((file) => fs.existsSync(path.join(SITE, file)));
   games.push({
     cover: extra.cover || cover || "",
+    // If a cover link from games.json fails to load, the menu falls back to site/covers/.
+    coverFallback: extra.cover && cover ? cover : "",
     folder,
     title: extra.title || manifest.title || folder.replace(/-/g, " "),
     description: extra.description || "",
