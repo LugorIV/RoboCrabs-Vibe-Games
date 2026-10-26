@@ -26,15 +26,16 @@ to choose the right engine.
 1. Download the game from DIY.org.
 2. Replace the whole folder in this repo with the new download. Keep the **same folder
    name**, e.g. `Crab-Escape-Run`. It's fine to delete the old folder first.
-3. Commit to `main`. The site updates by itself in about a minute (watch the
-   **Actions** tab on GitHub).
+3. Commit to `main`, or open a pull request. A pull request runs the build to check
+   the games (a red ✗ means something is wrong). Merging it publishes the site in
+   about a minute (watch the **Actions** tab on GitHub).
 
 ## Adding a new game
 
 1. Add the DIY.org download as a new top-level folder, e.g. `Crab-Space-Race/`.
 2. (Optional) Add an entry for it in `site/games.json` with an emoji, a description and
    who made it. If you skip this, it still shows up, using the title from DIY.org.
-3. Commit to `main`.
+3. Commit to `main`, or open a pull request and merge it.
 
 ## Changing the menu page
 
