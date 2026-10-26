@@ -1,0 +1,70 @@
+{
+  "title": "Crab vs Catfish Defense",
+  "usageType": "game",
+  "renderMode": "2d",
+  "entryHtmlPath": "index.html",
+  "primaryFiles": [
+    "index.html",
+    "styles.css",
+    "logic.js",
+    "lessons.js",
+    "worlds.js",
+    "catfish-bosses.js",
+    "tower-upgrades.js"
+  ],
+  "fileRoles": {
+    "assets/manifest.json": "asset-manifest",
+    "catfish-bosses.js": "script",
+    "index.html": "entry",
+    "lessons.js": "script",
+    "logic.js": "game-logic",
+    "project.manifest.json": "config",
+    "runtime/asset-library.js": "runtime-kit-asset-library",
+    "runtime/input.js": "runtime-kit-input",
+    "runtime/pixi-assets.js": "runtime-kit-pixi-assets",
+    "runtime/pixi-core.js": "runtime-kit-pixi-core",
+    "runtime/sounds.js": "runtime-kit-sounds",
+    "styles.css": "style",
+    "tower-upgrades.js": "script",
+    "worlds.js": "script"
+  },
+  "loadStrategy": {
+    "assets/manifest.json": "on_demand",
+    "catfish-bosses.js": "primary",
+    "index.html": "always",
+    "lessons.js": "primary",
+    "logic.js": "primary",
+    "project.manifest.json": "editor_only",
+    "runtime/asset-library.js": "on_demand",
+    "runtime/input.js": "on_demand",
+    "runtime/pixi-assets.js": "on_demand",
+    "runtime/pixi-core.js": "on_demand",
+    "runtime/sounds.js": "on_demand",
+    "styles.css": "primary",
+    "tower-upgrades.js": "primary",
+    "worlds.js": "primary"
+  },
+  "editPriority": {
+    "index.html": 1,
+    "styles.css": 2,
+    "logic.js": 3,
+    "lessons.js": 4,
+    "worlds.js": 5,
+    "catfish-bosses.js": 6,
+    "tower-upgrades.js": 7,
+    "assets/manifest.json": 8,
+    "runtime/asset-library.js": 9,
+    "runtime/input.js": 10,
+    "runtime/pixi-assets.js": 11,
+    "runtime/pixi-core.js": 12,
+    "runtime/sounds.js": 13
+  },
+  "contentFiles": [],
+  "assetManifestPath": "assets/manifest.json",
+  "initContract": {
+    "bootPath": "catfish-bosses.js",
+    "requiresImmediateBoot": true,
+    "offlineOnly": true,
+    "entryHtmlPath": "index.html"
+  }
+}

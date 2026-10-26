@@ -1,0 +1,434 @@
+{
+  "schemaVersion": 2,
+  "runtimeKitFamily": "pixi",
+  "runtime": "pixi-graphics",
+  "assets": [],
+  "builders": [],
+  "library": {
+    "schemaVersion": 1,
+    "assets": [
+      {
+        "key": "blue-catfish",
+        "name": "Blue Catfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:53:55Z",
+            "note": "Blue Catfish",
+            "path": "assets/library/blue-catfish/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "river-trap",
+        "name": "Woven Catfish Trap",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:53:55Z",
+            "note": "Woven Catfish Trap",
+            "path": "assets/library/river-trap/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "river-bait",
+        "name": "Golden Bait",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:53:55Z",
+            "note": "Golden Bait",
+            "path": "assets/library/river-bait/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "sunny-river",
+        "name": "sunny river",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "image",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:55:30Z",
+            "note": "Top-down clear turquoise river winding between sandy banks and reeds, with open water in the centre and no words",
+            "generationId": "gen_fc3b0627f4d44a9faec7e7994033",
+            "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/sunny-river/2e87755b-de34-4818-aaf7-67fd1e064b79.webp",
+            "objectKey": "prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/sunny-river/2e87755b-de34-4818-aaf7-67fd1e064b79.webp",
+            "width": 1536,
+            "height": 864,
+            "prompt": "Top-down clear turquoise river winding between sandy banks and reeds, with open water in the centre and no words",
+            "promptKey": "394fa1d494e7376c0fad20a2f6b1aee1",
+            "pictureKind": "background",
+            "variants": {
+              "phone": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/sunny-river/43d3feae-3d7b-4034-af39-2f9accd4d62b.webp",
+                "width": 576,
+                "height": 1024
+              },
+              "strip": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/sunny-river/5b928ae5-894a-49be-a0be-74176b28a75b.webp",
+                "width": 1344,
+                "height": 864
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "little-diver",
+        "name": "Little Diver",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-20T20:01:28Z",
+            "note": "Little Diver",
+            "path": "assets/library/little-diver/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "underwater-current",
+        "name": "underwater current",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "image",
+            "source": "ai",
+            "createdAt": "2026-10-20T20:03:14Z",
+            "note": "Bright cheerful underwater swimming scene viewed from above, clear turquoise and deep blue water with soft sunbeams from the surface, gentle sand patches, waving sea grass and a few tiny coral cluster",
+            "generationId": "gen_1b7102446c124e818a54668237c2",
+            "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/underwater-current/00ae129c-63c7-4bd9-8372-9875ce987db8.webp",
+            "objectKey": "prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/underwater-current/00ae129c-63c7-4bd9-8372-9875ce987db8.webp",
+            "width": 1536,
+            "height": 864,
+            "prompt": "Bright cheerful underwater swimming scene viewed from above, clear turquoise and deep blue water with soft sunbeams from the surface, gentle sand patches, waving sea grass and a few tiny coral clusters framing the edges, open uncluttered swimming space in the center, subtle bubbles and light rays, no animals, no words",
+            "promptKey": "904c7c82efccf39cc8dbce4c26a22db4",
+            "pictureKind": "background",
+            "variants": {
+              "phone": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/underwater-current/018dd919-5999-4a5b-abe9-f04f7adc9da5.webp",
+                "width": 576,
+                "height": 1024
+              },
+              "strip": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/91e154943d75436b9a5f0c55da1ff65c/assets/underwater-current/c34346e0-69a7-4098-95eb-e2f5a3e936b2.webp",
+                "width": 1344,
+                "height": 864
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "river-fisher-boat",
+        "name": "River Fisher in a Boat",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:13:48Z",
+            "note": "River Fisher in a Boat",
+            "path": "assets/library/river-fisher-boat/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "underwater-crab",
+        "name": "Underwater Crab",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:20:33Z",
+            "note": "Underwater Crab",
+            "path": "assets/library/underwater-crab/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "blue-crab",
+        "name": "Blue Crab",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:36:28Z",
+            "note": "Blue Crab",
+            "path": "assets/library/blue-crab/v1.svg"
+          }
+        ]
+      }
+    ]
+  },
+  "sounds": [
+    {
+      "id": "ambience.water_loop_01",
+      "name": "Water loop 1",
+      "category": "ambience",
+      "description": "gentle bubbling water loop, fits calm river or underwater scenes",
+      "path": "sfx/ambience/water_loop_01.mp3",
+      "duration": 3.397,
+      "loop": true,
+      "peaks": [
+        0.6,
+        0.3,
+        0.2,
+        0.4,
+        0.6,
+        0.7,
+        0.5,
+        0.5,
+        0.5,
+        0.8,
+        0.4,
+        0.4,
+        0.3,
+        0.6,
+        0.2,
+        0.6,
+        0.6,
+        0.3,
+        0.1,
+        0.6,
+        0.1,
+        0.2,
+        0.3,
+        0.5,
+        0.4,
+        0.2,
+        0.4,
+        0.4,
+        0.3,
+        0.2,
+        0.5,
+        0.3,
+        0.5,
+        0.4,
+        0.1,
+        0.5,
+        0.3,
+        0.4,
+        0.1,
+        0.3,
+        0.7,
+        0.6,
+        0.3,
+        0.7,
+        0.5,
+        0.6,
+        0.3,
+        0.1,
+        0.3,
+        0.2,
+        0.6,
+        0.9,
+        0.6,
+        0.4,
+        0.4,
+        0.2,
+        0.3,
+        0.2,
+        0.3,
+        0.3,
+        0.4,
+        1.0,
+        0.2,
+        0.2
+      ]
+    },
+    {
+      "id": "water.plop_01",
+      "name": "Plop 1",
+      "category": "water",
+      "description": "small splash sound, suitable for dropping an object into water",
+      "path": "sfx/water/plop_01.mp3",
+      "duration": 0.262,
+      "loop": false,
+      "peaks": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.4,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "water.bubble_02",
+      "name": "Bubble 2",
+      "category": "water",
+      "description": "Small bubble popping underwater, suitable for water effects or underwater scenes",
+      "path": "sfx/water/bubble_02.mp3",
+      "duration": 0.288,
+      "loop": false,
+      "peaks": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.1,
+        0.2,
+        0.2,
+        0.3,
+        0.4,
+        0.3,
+        0.3,
+        0.3,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.4,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.5,
+        0.7,
+        0.8,
+        0.8,
+        0.7,
+        0.4,
+        0.3,
+        0.5,
+        0.6,
+        0.5,
+        0.5,
+        0.5,
+        0.7,
+        1.0,
+        0.5,
+        0.4,
+        0.4,
+        0.4,
+        0.2,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "musicUses": {
+    "music.calm_acoustic_loop": "Main theme"
+  },
+  "musicUsesKey": "c9ce944d88b3d225"
+}

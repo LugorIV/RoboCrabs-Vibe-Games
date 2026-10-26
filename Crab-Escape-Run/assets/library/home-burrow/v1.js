@@ -1,0 +1,3 @@
+window.DIYAssetLibrary.defineModel("home-burrow", "v1", function (THREE, options) {
+const g=new THREE.Group();const sand=new THREE.MeshStandardMaterial({color:0xe3a65f,roughness:1});const dark=new THREE.MeshStandardMaterial({color:0x49322d});const green=new THREE.MeshStandardMaterial({color:0x51bd7d});let mound=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),sand);mound.scale.set(1.7,.85,1.1);mound.position.y=.35;g.add(mound);let door=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),dark);door.scale.set(.72,.58,.12);door.position.set(0,.44,1.04);g.add(door);for(let x of [-1.3,1.3]){let leaf=new THREE.Mesh(new THREE.ConeGeometry(.24,.8,5),green);leaf.position.set(x,.78,.1);g.add(leaf);}return g;
+});

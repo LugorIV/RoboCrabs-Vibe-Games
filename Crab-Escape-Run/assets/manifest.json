@@ -1,0 +1,498 @@
+{
+  "schemaVersion": 3,
+  "runtimeKitFamily": "three",
+  "assets": [],
+  "library": {
+    "schemaVersion": 1,
+    "assets": [
+      {
+        "key": "blue-crab",
+        "name": "Blue Crab",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:58:18Z",
+            "note": "Blue Crab",
+            "path": "assets/library/blue-crab/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "blue-catfish",
+        "name": "Blue Catfish",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:58:18Z",
+            "note": "Blue Catfish",
+            "path": "assets/library/blue-catfish/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "beach-rock",
+        "name": "Coral Rock Obstacle",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:58:18Z",
+            "note": "Coral Rock Obstacle",
+            "path": "assets/library/beach-rock/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "home-burrow",
+        "name": "Crab Home Burrow",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-18T19:58:18Z",
+            "note": "Crab Home Burrow",
+            "path": "assets/library/home-burrow/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "beach-seagull",
+        "name": "beach-seagull",
+        "dimension": "3d",
+        "current": "v2",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "glb",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:01:10Z",
+            "model": "animal.swing_pigeon",
+            "meta": {
+              "url": "https://cdn.diy.org/vibe-library/v1/models/animal.swing_pigeon.3b597b6b59.glb",
+              "height": 0.443,
+              "size": [
+                0.38,
+                0.443,
+                0.59
+              ],
+              "clips": {
+                "fly": "flap_loop",
+                "idle": "idle_loop"
+              },
+              "regions": {
+                "feathers": {
+                  "color": "#7d8a99",
+                  "materials": [
+                    "Feathers"
+                  ]
+                },
+                "eyes": {
+                  "color": "#1b2837",
+                  "materials": [
+                    "Eyes"
+                  ]
+                },
+                "skin": {
+                  "color": "#a56a6a",
+                  "materials": [
+                    "Skin"
+                  ]
+                },
+                "feathers_accent": {
+                  "color": "#4e716d",
+                  "materials": [
+                    "Feathers_Accent"
+                  ]
+                },
+                "beak": {
+                  "color": "#bd9f7a",
+                  "materials": [
+                    "Beak"
+                  ]
+                }
+              },
+              "bones": {
+                "head": "head"
+              },
+              "thumb": "https://cdn.diy.org/vibe-library/v1/models/animal.swing_pigeon.3b597b6b59.webp"
+            }
+          },
+          {
+            "id": "v2",
+            "kind": "look",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:01:10Z",
+            "look": {
+              "base": "v1",
+              "colors": {
+                "feathers": "#f4f1e6",
+                "feathers_accent": "#7c929d",
+                "beak": "#e9aa38",
+                "skin": "#d27a67"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "key": "checkpoint-check",
+        "name": "Green Checkpoint",
+        "dimension": "3d",
+        "current": "v2",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:01:57Z",
+            "note": "Green Checkpoint",
+            "path": "assets/library/checkpoint-check/v1.js"
+          },
+          {
+            "id": "v2",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:07:06Z",
+            "note": "Green Checkpoint",
+            "path": "assets/library/checkpoint-check/v2.js"
+          }
+        ]
+      },
+      {
+        "key": "parkour-wall",
+        "name": "Thick Parkour Wall",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:17:46Z",
+            "note": "Thick Parkour Wall",
+            "path": "assets/library/parkour-wall/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "parkour-boards",
+        "name": "Wooden Parkour Boards",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-25T19:17:46Z",
+            "note": "Wooden Parkour Boards",
+            "path": "assets/library/parkour-boards/v1.js"
+          }
+        ]
+      },
+      {
+        "key": "level-two-checkpoint-sign",
+        "name": "Level 2 Checkpoint Sign",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-25T23:25:30Z",
+            "note": "Level 2 Checkpoint Sign",
+            "path": "assets/library/level-two-checkpoint-sign/v1.js"
+          }
+        ]
+      }
+    ]
+  },
+  "sounds": [
+    {
+      "id": "creature.burble_01",
+      "name": "Burble 1",
+      "category": "creature",
+      "description": "A bubbling, gurgling sound from a small creature, fits underwater scenes",
+      "path": "sfx/creature/burble_01.mp3",
+      "duration": 0.968,
+      "loop": false,
+      "peaks": [
+        0.0,
+        0.1,
+        0.1,
+        0.1,
+        0.2,
+        0.2,
+        0.3,
+        0.4,
+        0.6,
+        0.3,
+        0.5,
+        0.9,
+        0.7,
+        0.5,
+        0.7,
+        0.5,
+        0.4,
+        0.3,
+        0.2,
+        0.3,
+        0.1,
+        0.2,
+        1.0,
+        1.0,
+        0.9,
+        0.3,
+        0.7,
+        0.9,
+        0.5,
+        0.3,
+        0.1,
+        1.0,
+        0.4,
+        0.2,
+        0.5,
+        0.2,
+        0.2,
+        0.3,
+        0.2,
+        0.1,
+        0.0,
+        0.1,
+        0.0,
+        0.1,
+        0.1,
+        0.3,
+        0.2,
+        0.3,
+        0.1,
+        0.1,
+        0.2,
+        0.0,
+        0.1,
+        0.1,
+        0.0,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "music.happy_whistling_ukulele",
+      "name": "Happy Whistling Ukulele",
+      "category": "music",
+      "description": "Bright ukulele with whistling, medium tempo, cheerful mood, perfect for exploration scenes",
+      "path": "music/acoustic/happy_whistling_ukulele.mp3",
+      "duration": 120.459,
+      "loop": true,
+      "peaks": [
+        0.44,
+        0.3,
+        0.43,
+        0.45,
+        0.46,
+        0.31,
+        0.34,
+        0.32,
+        0.42,
+        0.39,
+        0.39,
+        0.6,
+        0.52,
+        0.87,
+        0.71,
+        0.57,
+        0.81,
+        0.8,
+        0.56,
+        0.67,
+        0.75,
+        0.67,
+        0.76,
+        0.77,
+        0.76,
+        0.73,
+        0.84,
+        0.83,
+        1.0,
+        0.8,
+        0.67,
+        0.6,
+        0.74,
+        0.76,
+        0.75,
+        0.74,
+        0.69,
+        0.76,
+        0.88,
+        0.82,
+        0.81,
+        0.94,
+        0.81,
+        0.73,
+        0.76,
+        0.69,
+        0.89,
+        0.74,
+        0.69,
+        0.71,
+        0.81,
+        0.91,
+        0.8,
+        0.66,
+        0.63,
+        0.72,
+        0.81,
+        0.67,
+        0.75,
+        0.7,
+        0.69,
+        0.72,
+        0.72,
+        0.67,
+        0.7,
+        0.75,
+        0.68,
+        0.79,
+        0.75,
+        0.67,
+        0.86,
+        0.93,
+        0.75,
+        0.88,
+        0.8,
+        0.97,
+        0.74,
+        0.74,
+        0.88,
+        0.81,
+        0.87,
+        0.66,
+        0.65,
+        0.7,
+        0.63,
+        0.7,
+        0.72,
+        0.7,
+        0.75,
+        0.7,
+        0.65,
+        0.76,
+        0.63,
+        0.79,
+        0.45,
+        0.05
+      ],
+      "use": "Main theme"
+    },
+    {
+      "id": "jump.jump_retro_12",
+      "name": "Jump retro 12",
+      "category": "jump",
+      "description": "A quick jump followed by a soft landing, suitable for platformer games",
+      "path": "sfx/jump/jump_retro_12.mp3",
+      "duration": 0.262,
+      "loop": false,
+      "peaks": [
+        0.8,
+        0.9,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.9,
+        1.0,
+        1.0,
+        0.9,
+        1.0,
+        0.9,
+        0.9,
+        0.8,
+        0.8,
+        0.6,
+        0.3,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "musicUses": {
+    "music.happy_whistling_ukulele": "Main theme"
+  },
+  "musicUsesKey": "96f7e338d7969fe1"
+}

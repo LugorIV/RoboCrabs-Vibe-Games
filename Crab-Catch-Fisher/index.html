@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crab Catch Fisher</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="game-root" aria-label="2D game workspace">
+    <canvas id="game-canvas" aria-hidden="true"></canvas>
+    <section id="game-over" hidden aria-label="Round finished">
+      <div class="end-card">
+        <h1>Time's up!</h1>
+        <p id="final-score">Final score: 0</p>
+        <button id="restart-round" type="button">Play again</button>
+      </div>
+    </section>
+  </main>
+  <script src="runtime/input.js" defer></script>
+  <script src="runtime/pixi-core.js" defer></script>
+  <script src="runtime/pixi-assets.js" defer></script>
+  <script src="runtime/asset-library.js" defer></script>
+  <script src="runtime/sounds.js" defer></script>
+  <script src="logic.js" defer></script>
+</body>
+</html>

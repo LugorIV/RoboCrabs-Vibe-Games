@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "packId": "procedural-assets-2",
+  "runtimeKitFamily": "three",
+  "displayName": "Procedural Assets 2",
+  "description": "Source-controlled Three.js factories for Procedural Assets 2 catalog IDs."
+}

@@ -1,0 +1,52 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #121826;
+  color: #f8fafc;
+  font-family: var(--ui-body), system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#game-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  background: #121826;
+}
+
+#game-over:not([hidden]) {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(300px, calc(100% - 24px));
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: #e9fff9;
+  color: #07516b;
+  text-align: center;
+  box-shadow: 0 4px 15px #07516b44;
+}
+
+#game-over h2, #game-over p { margin: 2px; font-family: var(--ui-display), sans-serif; font-size: 17px; }
+#restart-button { min-height: 44px; padding: 4px 20px; border: 0; border-radius: 12px; background: #1686bc; color: white; font: 18px var(--ui-body), sans-serif; }
+
+#game-canvas,
+#game-root canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  background: transparent;
+}
+
