@@ -47,6 +47,14 @@ Edit `site/games.json`:
 - `games`: one entry per folder name, with `emoji`, `description` and `creator`. Games
   are listed in this order.
 
+## Cover pictures
+
+Put a picture named after the game folder in `site/covers/`, e.g.
+`site/covers/Crab-Escape-Run.jpg` (`.jpg`, `.png` or `.webp`). It's used automatically
+as that game's picture on the menu; without one, the card shows the game's emoji.
+Pictures are shown in a wide 16:9 frame and trimmed to fit, so keep the important
+part in the middle.
+
 ## Collecting feedback
 
 The easiest option for the general public (no account needed) is a **Google Form**:

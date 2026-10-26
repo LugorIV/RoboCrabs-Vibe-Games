@@ -60,7 +60,11 @@ for (const folder of folders) {
   fs.writeFileSync(entry, html);
 
   const extra = extras[folder] || {};
+  const cover = ["jpg", "jpeg", "png", "webp"]
+    .map((ext) => `covers/${folder}.${ext}`)
+    .find((file) => fs.existsSync(path.join(SITE, file)));
   games.push({
+    cover: extra.cover || cover || "",
     folder,
     title: extra.title || manifest.title || folder.replace(/-/g, " "),
     description: extra.description || "",
