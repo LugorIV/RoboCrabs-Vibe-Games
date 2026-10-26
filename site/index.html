@@ -131,12 +131,14 @@
       border-top: 1px solid var(--bg2);
     }
     .feedback:hover { background: var(--bg2); }
-    footer {
-      text-align: center;
-      padding: 0 16px 40px;
+    .feedback-line {
+      margin: 8px auto 0;
+      max-width: 40rem;
+      font-size: 1.05rem;
       color: var(--muted);
     }
-    footer a { color: inherit; font-weight: 700; }
+    .feedback-line:empty { display: none; }
+    .feedback-line a { color: var(--text); font-weight: 700; }
     .notice { grid-column: 1 / -1; text-align: center; }
   </style>
 </head>
@@ -145,9 +147,9 @@
     <img class="logo" src="logo.png" width="180" height="180" alt="RoboCrabs team logo">
     <h1 id="site-title">RoboCrabs Vibe Games</h1>
     <p class="tagline" id="tagline">Games made by FLL Team: RoboCrabs #56774 at DIY.org. Pick one and play!</p>
+    <p class="feedback-line" id="feedback-line"></p>
   </header>
   <main id="games" aria-live="polite"><p class="notice">Loading games…</p></main>
-  <footer id="footer"></footer>
   <script>
     (function () {
       var list = document.getElementById("games");
@@ -210,13 +212,13 @@
           });
 
           if (data.feedbackUrl) {
-            var footer = document.getElementById("footer");
-            footer.appendChild(document.createTextNode("Played a game? "));
+            var line = document.getElementById("feedback-line");
+            line.appendChild(document.createTextNode("Played a game? "));
             var a = el("a", "", "Send the makers your feedback!");
             a.href = feedbackLink(data.feedbackUrl, "");
             a.target = "_blank";
             a.rel = "noopener";
-            footer.appendChild(a);
+            line.appendChild(a);
           }
         })
         .catch(function () {
