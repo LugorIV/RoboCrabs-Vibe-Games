@@ -1,0 +1,12 @@
+{
+  "siteTitle": "RoboCrabs Vibe Games",
+  "tagline": "Games made by kids at DIY.org. Pick one and play!",
+  "feedbackUrl": "",
+  "games": {
+    "Crab-Escape-Run": { "emoji": "🏃", "description": "A 3D run to get the crab safely home.", "creator": "" },
+    "Crab-vs-Catfish-Defense": { "emoji": "🛡️", "description": "Build crab towers to stop the catfish.", "creator": "" },
+    "Crab-Clean-Ocean": { "emoji": "🌊", "description": "Help the crab clean trash out of the ocean.", "creator": "" },
+    "Crab-Catch-Fisher": { "emoji": "🎣", "description": "Catch crabs before the time runs out.", "creator": "" },
+    "Catfish-Trap-Quest": { "emoji": "🐟", "description": "Set traps to catch the catfish.", "creator": "" }
+  }
+}
