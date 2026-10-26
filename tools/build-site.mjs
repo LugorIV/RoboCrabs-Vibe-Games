@@ -60,7 +60,13 @@ for (const folder of folders) {
   fs.writeFileSync(entry, html);
 
   const extra = extras[folder] || {};
+  const cover = ["jpg", "jpeg", "png", "webp"]
+    .map((ext) => `covers/${folder}.${ext}`)
+    .find((file) => fs.existsSync(path.join(SITE, file)));
   games.push({
+    cover: extra.cover || cover || "",
+    // If a cover link from games.json fails to load, the menu falls back to site/covers/.
+    coverFallback: extra.cover && cover ? cover : "",
     folder,
     title: extra.title || manifest.title || folder.replace(/-/g, " "),
     description: extra.description || "",

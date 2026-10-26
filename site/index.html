@@ -80,6 +80,14 @@
     .play:hover { transform: translateY(-3px); }
     .play:focus-visible { outline: 4px solid var(--ring); outline-offset: -4px; border-radius: 20px; }
     .emoji { font-size: 3.2rem; line-height: 1; }
+    .cover {
+      display: block;
+      width: calc(100% + 40px);
+      margin: -22px -20px 0;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: var(--bg2);
+    }
     .card h2 { margin: 14px 0 6px; font-size: 1.4rem; }
     .desc { margin: 0; color: var(--muted); flex: 1; }
     .creator { margin: 10px 0 0; font-size: .95rem; font-weight: 600; }
@@ -161,7 +169,21 @@
             var card = el("article", "card");
             var play = el("a", "play");
             play.href = game.folder + "/";
-            play.appendChild(el("div", "emoji", game.emoji));
+            if (game.cover) {
+              var img = el("img", "cover");
+              img.src = game.cover;
+              img.alt = "";
+              img.loading = "lazy";
+              if (game.coverFallback) {
+                img.onerror = function () {
+                  img.onerror = null;
+                  img.src = game.coverFallback;
+                };
+              }
+              play.appendChild(img);
+            } else {
+              play.appendChild(el("div", "emoji", game.emoji));
+            }
             play.appendChild(el("h2", "", game.title));
             play.appendChild(el("p", "desc", game.description));
             if (game.creator) play.appendChild(el("p", "creator", "Made by " + game.creator));

@@ -3,10 +3,35 @@
   "tagline": "Games made by kids at DIY.org. Pick one and play!",
   "feedbackUrl": "",
   "games": {
-    "Crab-Escape-Run": { "emoji": "🏃", "description": "A 3D run to get the crab safely home.", "creator": "" },
-    "Crab-vs-Catfish-Defense": { "emoji": "🛡️", "description": "Build crab towers to stop the catfish.", "creator": "" },
-    "Crab-Clean-Ocean": { "emoji": "🌊", "description": "Help the crab clean trash out of the ocean.", "creator": "" },
-    "Crab-Catch-Fisher": { "emoji": "🎣", "description": "Catch crabs before the time runs out.", "creator": "" },
-    "Catfish-Trap-Quest": { "emoji": "🐟", "description": "Set traps to catch the catfish.", "creator": "" }
+    "Crab-Escape-Run": {
+      "emoji": "🏃",
+      "description": "A 3D run to get the crab safely home.",
+      "creator": "",
+      "cover": "https://cdn.diy.org/posts/d8d42703-78c7-4745-8905-735b16976799.webp"
+    },
+    "Crab-vs-Catfish-Defense": {
+      "emoji": "🛡️",
+      "description": "Build crab towers to stop the catfish.",
+      "creator": "",
+      "cover": "https://cdn.diy.org/posts/b858e8a2-e07e-4c6b-8dbb-5d65f788b9d4.webp"
+    },
+    "Crab-Clean-Ocean": {
+      "emoji": "🌊",
+      "description": "Help the crab clean trash out of the ocean.",
+      "creator": "",
+      "cover": "https://cdn.diy.org/posts/5f41dbec-1f9a-430f-a9f5-ddc97e35c221.webp"
+    },
+    "Crab-Catch-Fisher": {
+      "emoji": "🎣",
+      "description": "Catch crabs before the time runs out.",
+      "creator": "",
+      "cover": "https://cdn.diy.org/posts/5c8bce8a-fb71-4614-8115-0e7e626182ba.webp"
+    },
+    "Catfish-Trap-Quest": {
+      "emoji": "🐟",
+      "description": "Set traps to catch the catfish.",
+      "creator": "",
+      "cover": "https://cdn.diy.org/posts/ed865389-a57a-478d-bf72-b901a1d0a804.webp"
+    }
   }
 }

@@ -47,6 +47,23 @@ Edit `site/games.json`:
 - `games`: one entry per folder name, with `emoji`, `description` and `creator`. Games
   are listed in this order.
 
+## Cover pictures
+
+Put a picture named after the game folder in `site/covers/`, e.g.
+`site/covers/Crab-Escape-Run.jpg` (`.jpg`, `.png` or `.webp`). It's used automatically
+as that game's picture on the menu; without one, the card shows the game's emoji.
+Pictures are shown in a wide 16:9 frame and trimmed to fit, so keep the important
+part in the middle.
+
+You can also use the DIY.org cover picture directly by putting its link in
+`site/games.json` as `"cover"`, e.g.
+`"cover": "https://cdn.diy.org/posts/5c8bce8a-fb71-4614-8115-0e7e626182ba.webp"`.
+If that link ever fails to load, the menu shows the picture from `site/covers/` instead.
+
+To find a game's cover link: on diy.org, right-click the cover → **Inspect**. In the
+highlighted `<img …>` line, the link is inside `src="…url=https%3A%2F%2Fcdn.diy.org%2Fposts%2F….webp"`.
+Turn `%3A` into `:` and `%2F` into `/` to get `https://cdn.diy.org/posts/….webp`.
+
 ## Collecting feedback
 
 The easiest option for the general public (no account needed) is a **Google Form**:
