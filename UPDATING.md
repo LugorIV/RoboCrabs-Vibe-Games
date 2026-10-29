@@ -78,6 +78,12 @@ The easiest option for the general public (no account needed) is a **Google Form
 
 Each game's feedback button then opens the form with its name already filled in.
 
+The form opens inside the site's own feedback page (`site/feedback.html`), with a big
+**← Back to games** button above it, so players (and a kiosk laptop) can always get back.
+If the form shows up blank there, add the form's embed link as `feedbackEmbedUrl` in
+`site/games.json`: in Google Forms click **Send**, choose the **< >** tab, and copy the
+`https://docs.google.com/forms/d/e/…/viewform?embedded=true` link from the code it shows.
+
 ## Previewing on your computer (optional)
 
 ```sh

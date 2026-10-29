@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feedback · RoboCrabs Vibe Games</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    :root {
+      --bg: #e0f4ff;
+      --bg2: #b9e3fb;
+      --text: #0f2a44;
+      --muted: #4a6580;
+      --accent: #ff5a4e;
+      --accent-text: #ffffff;
+      --ring: #0ea5e9;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1b2b;
+        --bg2: #12324d;
+        --text: #eaf6ff;
+        --muted: #a7c3da;
+        --accent: #ff6b5f;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      font-family: "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 12px 16px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: var(--bg2);
+      box-shadow: 0 2px 8px rgba(15, 42, 68, .15);
+    }
+    .back {
+      display: inline-flex;
+      align-items: center;
+      padding: 12px 22px;
+      border-radius: 14px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-weight: 800;
+      font-size: 1.2rem;
+      text-decoration: none;
+    }
+    .back:focus-visible { outline: 4px solid var(--ring); outline-offset: 2px; }
+    .title { margin: 0; font-size: 1.15rem; font-weight: 700; }
+    .title span { color: var(--muted); font-weight: 400; }
+    .open-direct { margin: 0 0 0 auto; color: var(--muted); font-size: .9rem; }
+    .open-direct a { color: inherit; }
+    iframe {
+      flex: 1;
+      width: 100%;
+      border: 0;
+      background: #fff;
+    }
+    .notice { margin: 40px 16px; text-align: center; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <a class="back" href="./">← Back to games</a>
+    <p class="title" id="title">Tell us what you think!</p>
+    <p class="open-direct" id="open-direct" hidden>Form not showing? <a id="direct-link" href="#">Open it here</a></p>
+  </div>
+  <p class="notice" id="notice">Loading the form…</p>
+  <script>
+    (function () {
+      var game = new URLSearchParams(location.search).get("game") || "";
+      if (game) {
+        var title = document.getElementById("title");
+        title.textContent = "Tell us what you think ";
+        var name = document.createElement("span");
+        name.textContent = "about " + game;
+        title.appendChild(name);
+      }
+
+      fetch("games.json", { cache: "no-cache" })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var notice = document.getElementById("notice");
+          var url = data.feedbackEmbedUrl || data.feedbackUrl;
+          if (!url) {
+            notice.textContent = "Feedback isn't set up yet.";
+            return;
+          }
+          // Google Forms "pre-filled link" ends with "=" so the game name can be appended.
+          if (/=$/.test(url)) url += encodeURIComponent(game);
+
+          var frame = document.createElement("iframe");
+          frame.title = "Feedback form";
+          frame.src = url;
+          notice.replaceWith(frame);
+
+          // Same tab on purpose: Alt+Left (Back) returns here and the bar above keeps a way out.
+          document.getElementById("direct-link").href = data.feedbackUrl;
+          document.getElementById("open-direct").hidden = false;
+        })
+        .catch(function () {
+          document.getElementById("notice").textContent = "Sorry, the form could not load. Please go back to the games.";
+        });
+    })();
+  </script>
+</body>
+</html>

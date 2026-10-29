@@ -161,9 +161,9 @@
         return node;
       }
 
-      function feedbackLink(base, gameTitle) {
-        // Google Forms "pre-filled link" ends with "=" so the game name can be appended.
-        return /=$/.test(base) ? base + encodeURIComponent(gameTitle) : base;
+      // The form opens inside feedback.html (same tab) so there is always a way back to the games.
+      function feedbackLink(gameTitle) {
+        return "feedback.html" + (gameTitle ? "?game=" + encodeURIComponent(gameTitle) : "");
       }
 
       fetch("games.json", { cache: "no-cache" })
@@ -203,9 +203,7 @@
             card.appendChild(play);
             if (data.feedbackUrl) {
               var fb = el("a", "feedback", "💬 Tell us what you think");
-              fb.href = feedbackLink(data.feedbackUrl, game.title);
-              fb.target = "_blank";
-              fb.rel = "noopener";
+              fb.href = feedbackLink(game.title);
               card.appendChild(fb);
             }
             list.appendChild(card);
@@ -215,9 +213,7 @@
             var line = document.getElementById("feedback-line");
             line.appendChild(document.createTextNode("Played a game? "));
             var a = el("a", "", "Send the makers your feedback!");
-            a.href = feedbackLink(data.feedbackUrl, "");
-            a.target = "_blank";
-            a.rel = "noopener";
+            a.href = feedbackLink("");
             line.appendChild(a);
           }
         })
