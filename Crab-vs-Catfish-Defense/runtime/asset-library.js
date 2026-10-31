@@ -6,6 +6,7 @@
   var lib = window.DIYAssetLibrary || {};
   window.DIYAssetLibrary = lib;
   var RASTER_SIZE = 256;
+  var MAX_RASTER = 1024;
   var DEFAULT_SIZE = 96;
   var assets = {};
   var byFactory = {};
@@ -15,6 +16,11 @@
   var failed = {};
   var textures = {};
   var models = {};
+  // Per picture: the largest side the game asks for (device pixels), the side it was drawn at
+  // and the loaded image, so a picture shown big is drawn again sharper.
+  var wanted = {};
+  var drawnAt = {};
+  var images = {};
 
   function slot(entry) {
     return entry.key + "@" + (entry.version || "");
@@ -140,12 +146,19 @@
     try { URL.revokeObjectURL(url); } catch (_error) {}
   }
 
-  // SVGs are drawn once onto a canvas so every renderer gets crisp pixels.
-  function toSource(img, entry) {
+  // SVGs are drawn onto a canvas so every renderer gets crisp pixels: at the largest size the
+  // game shows them (256 to 1024 px on the longest side).
+  function rasterSide(id) {
+    return Math.min(MAX_RASTER, Math.max(RASTER_SIZE, Math.ceil(wanted[id] || 0)));
+  }
+
+  function toSource(img, entry, id) {
     if (entry.kind !== "svg") return img;
     var w = entry.width || img.naturalWidth || RASTER_SIZE;
     var h = entry.height || img.naturalHeight || RASTER_SIZE;
-    var scale = RASTER_SIZE / Math.max(w, h, 1);
+    var side = rasterSide(id);
+    drawnAt[id] = side;
+    var scale = side / Math.max(w, h, 1);
     var canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
@@ -195,9 +208,12 @@
         })
         .then(function (result) {
           if (!result) return null;
-          var source = toSource(result.loaded.img, result.entry);
+          var source = toSource(result.loaded.img, result.entry, id);
           // An SVG is copied onto a canvas, so its blob URL is no longer needed.
-          if (source !== result.loaded.img) releaseUrl(result.loaded.url);
+          if (source !== result.loaded.img) {
+            releaseUrl(result.loaded.url);
+            images[id] = { img: result.loaded.img, entry: result.entry };
+          }
           pictures[id] = source;
           return source;
         })
@@ -230,6 +246,21 @@
   lib.whenLoaded = function () {
     return Promise.all(loadAll());
   };
+
+  // The game shows this picture at options.size: remember it, and draw it again if it is
+  // already drawn smaller than that.
+  function want(entry, options) {
+    var id = slot(entry);
+    var side = Number(options && (options.size || options.width)) || DEFAULT_SIZE;
+    var ratio = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
+    wanted[id] = Math.max(wanted[id] || 0, side * ratio);
+    var image = images[id];
+    if (!image || !pictures[id] || drawnAt[id] >= rasterSide(id)) return;
+    try {
+      pictures[id] = toSource(image.img, image.entry, id);
+      delete textures[id];
+    } catch (_error) {}
+  }
 
   function textureFor(PIXI, entry) {
     var id = slot(entry);
@@ -469,6 +500,7 @@
       }
       var picture = isPicture(entry) ? entry : fallbackPicture(entry);
       if (!picture) return emptyContainer(PIXI, key);
+      want(picture, options);
       var box = defaultBox(picture, options);
       return buildSprite(PIXI, picture, box) || swapWhenLoaded(PIXI, picture, null, box);
     };

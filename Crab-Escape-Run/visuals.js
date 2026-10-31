@@ -17,6 +17,10 @@ window.CrabRunVisuals = {
     const oceanFloor = ground(54, 150, seaBed, 0, -.34, startZ - 38);
     oceanFloor.visible = false;
 
+    const claws = ctx.assets.model("crab-first-person-claws");
+    ctx.camera.add(claws);
+    claws.position.set(0, -.38, -.95);
+
     function fitWorld(size) {
       viewportSize = size;
       const aspect = size.width / Math.max(1, size.height);
@@ -24,6 +28,7 @@ window.CrabRunVisuals = {
       sandFloor.scale.x = width / 17;
       waterFloor.scale.x = width / 60;
       oceanFloor.scale.x = width / 54;
+      claws.scale.setScalar(Math.min(1.25, Math.max(.85, aspect * 1.05)));
     }
     fitWorld(viewportSize);
 
@@ -41,11 +46,31 @@ window.CrabRunVisuals = {
       return object;
     }
 
+    function addTunnelHoles(wall) {
+      const dark = new T.MeshBasicMaterial({ color: 0x291e1a, side: T.DoubleSide });
+      const rim = ctx.look.material("toon", { color: 0xf2d39a });
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 5; i++) {
+          const x = -2.48 + i * 1.24;
+          const y = .31;
+          const disk = new T.Mesh(new T.CircleGeometry(.19, 20), dark);
+          disk.position.set(x, y, side * .315);
+          if (side < 0) disk.rotation.y = Math.PI;
+          wall.add(disk);
+          const lip = new T.Mesh(new T.RingGeometry(.19, .25, 20), rim);
+          lip.position.set(x, y, side * .321);
+          if (side < 0) lip.rotation.y = Math.PI;
+          wall.add(lip);
+        }
+      }
+    }
+
     const crab = new T.Group();
     const crabArt = ctx.assets.orientForward(T, ctx.assets.model("blue-crab"), "+Z");
     crabArt.scale.setScalar(.96);
-    crabArt.rotation.y = 0;
+    crabArt.rotation.y = Math.PI;
     crabArt.visible = true;
+    crabArt.userData.oceanMotion = true;
     crab.add(crabArt);
     scene.add(crab);
 
@@ -83,8 +108,8 @@ window.CrabRunVisuals = {
     }
 
     return {
-      fitWorld, edgeMarkers, sandFloor, waterFloor, oceanFloor, asset,
-      crab, gull, gullMarker, catfish, fish
+      fitWorld, edgeMarkers, sandFloor, waterFloor, oceanFloor, asset, addTunnelHoles,
+      crab, claws, gull, gullMarker, catfish, fish
     };
   }
 };

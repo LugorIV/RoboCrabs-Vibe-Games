@@ -14,15 +14,16 @@
     const laneX = [-2.5, 0, 2.5];
     let crabLane = 1;
     let runSpeed = 5.2;
-    const gullWarningTime = 0.95;
-    const gullDiveTime = 0.65;
-    const gullRecoveryTime = 1.05;
-    const gullRestTime = 2.2;
     const courseLength = runSpeed * 200;
     const walls = [];
+    const oceanRocks = [];
+    const oceanRowSpacing = 12;
+    let lastOceanBlock = -1;
+    let sameOceanBlockCount = 0;
     const visuals = window.CrabRunVisuals.create(ctx, scene, T, startZ);
-    const { fitWorld, edgeMarkers, sandFloor, waterFloor, oceanFloor, asset,
-      crab, gull, gullMarker, catfish, fish } = visuals;
+    const { fitWorld, edgeMarkers, sandFloor, waterFloor, oceanFloor, asset, addTunnelHoles,
+      crab, claws, gull, gullMarker, catfish, fish } = visuals;
+    const hazards = window.CrabRunHazards.create(ctx, visuals);
     let playing = false;
     let ended = false;
     let elapsed = 0;
@@ -33,43 +34,73 @@
     let jumpSpeed = 0;
     let progress = 0;
     let stage = "beach";
-    let gullPhase = "cruise";
-    let gullPhaseTimer = 0;
-    let gullTargetX = 0;
-    let gullTargetY = 0;
-    let gullTargetZ = 0;
-    const gullDiveStart = new T.Vector3();
-    const gullAim = new T.Vector3();
     const wallHeight = 1.49;
     const wallWidth = 6.2;
     const wallDepth = .5;
     const rampLength = 3.15;
     const rampAngle = Math.atan((wallHeight - .1) / rampLength);
-    let catfishGap = 8.5;
     function clearWorldItems(items) {
       for (const item of items) scene.remove(item.object);
       items.length = 0;
+    }
+    function chooseOceanBlock() {
+      let blockedLane = Math.floor(Math.random() * laneX.length);
+      if (blockedLane === lastOceanBlock && sameOceanBlockCount >= 2) {
+        blockedLane = (lastOceanBlock + 1 + Math.floor(Math.random() * 2)) % laneX.length;
+      }
+      sameOceanBlockCount = blockedLane === lastOceanBlock ? sameOceanBlockCount + 1 : 1;
+      lastOceanBlock = blockedLane;
+      return blockedLane;
+    }
+    function placeOceanRock(rock, z) {
+      rock.position.set(laneX[chooseOceanBlock()], 0, z);
+      rock.rotation.y = Math.random() * Math.PI * 2;
+      rock.scale.setScalar(.9);
+      rock.visible = true;
+    }
+    function resetOceanRocks() {
+      lastOceanBlock = -1;
+      sameOceanBlockCount = 0;
+      let z = crab.position.z - 14;
+      for (const rock of oceanRocks) {
+        placeOceanRock(rock, z);
+        z -= oceanRowSpacing;
+      }
+    }
+    function updateOceanRocks() {
+      for (const rock of oceanRocks) {
+        if (rock.position.z > crab.position.z + 1.8) {
+          let furthestZ = Infinity;
+          for (const other of oceanRocks) furthestZ = Math.min(furthestZ, other.position.z);
+          placeOceanRock(rock, furthestZ - oceanRowSpacing);
+        }
+        if (Math.abs(crab.position.x - rock.position.x) < 1.08 &&
+            Math.abs(crab.position.z - rock.position.z) < 1.15 && jumpY < .7) {
+          finish();
+          return true;
+        }
+      }
+      return false;
     }
     function addWalls() {
       const featureLength = wallDepth + 2 * rampLength;
       // Leave enough running room to react and make up to two discrete lane snaps.
       const wallSpacing = featureLength + runSpeed * 2.2;
       const wallCount = Math.ceil(courseLength / wallSpacing) + 1;
-      let previousRampSide = Math.random() < 0.5 ? -1 : 1;
-      let sameSideCount = 0;
+      let sidePair = [];
       for (let row = 0; row < wallCount; row++) {
         const z = startZ - (14 + row * wallSpacing);
-        let rampSide = Math.random() < 0.5 ? -1 : 1;
-        // Shuffle each row's route, but avoid long repeated patterns. The
-        // existing spacing still gives enough time to switch outer lanes.
-        if (rampSide === previousRampSide && sameSideCount >= 2) {
-          rampSide *= -1;
+        // Deal routes in shuffled left/right pairs: both ramps stay equally
+        // common, with no streak longer than two rows to make route changes fair.
+        if (sidePair.length === 0) {
+          const firstSide = Math.random() < 0.5 ? -1 : 1;
+          sidePair = [firstSide, -firstSide];
         }
-        sameSideCount = rampSide === previousRampSide ? sameSideCount + 1 : 1;
-        previousRampSide = rampSide;
+        const rampSide = sidePair.shift();
         const centerX = rampSide * 1.25;
         const rampX = rampSide * 2.5;
         const wall = asset("parkour-wall");
+        addTunnelHoles(wall);
         wall.position.set(centerX, 0, z);
         const approach = asset("parkour-boards");
         approach.position.set(rampX, wallHeight / 2, z + wallDepth / 2 + rampLength / 2);
@@ -108,66 +139,6 @@
     function nearWall(z, distance) {
       return walls.some((wall) => Math.abs(z - wall.z) < distance);
     }
-    function beginGullDive() {
-      gullPhase = "warning";
-      gullPhaseTimer = 0;
-      gullTargetX = crab.position.x;
-      gullTargetZ = crab.position.z - runSpeed * (gullWarningTime + gullDiveTime);
-      gullTargetY = wallSupportY(gullTargetX, gullTargetZ, crab.position.y);
-      gullMarker.position.set(gullTargetX, gullTargetY > 0 ? gullTargetY + .02 : -.23, gullTargetZ);
-      gullMarker.scale.setScalar(1);
-      gullMarker.visible = true;
-    }
-    function gullTouchesCrab() {
-      const playerBottom = crab.position.y;
-      const playerTop = playerBottom + .96;
-      const birdBottom = gull.object.position.y;
-      const birdTop = birdBottom + .9;
-      return Math.hypot(crab.position.x - gull.object.position.x, crab.position.z - gull.object.position.z) < 1.2 &&
-        playerBottom < birdTop && playerTop > birdBottom;
-    }
-    function updateGull(dt) {
-      const position = gull.object.position;
-      gullPhaseTimer += dt;
-      if (gullPhase === "cruise") {
-        position.x += (crab.position.x - position.x) * Math.min(1, dt * 1.5);
-        position.y = 4.8 + Math.sin(elapsed * 3.5) * .18;
-        position.z = crab.position.z - 12;
-        if (gullPhaseTimer >= gullRestTime) beginGullDive();
-      } else if (gullPhase === "warning") {
-        gullAim.set(gullTargetX, gullTargetY + 4.8, gullTargetZ - 2.6);
-        position.lerp(gullAim, Math.min(1, dt * 5));
-        gullMarker.scale.setScalar(1 + .045 * Math.sin(elapsed * 11));
-        if (gullPhaseTimer >= gullWarningTime) {
-          gullPhase = "dive";
-          gullPhaseTimer = 0;
-          gullDiveStart.copy(position);
-        }
-      } else if (gullPhase === "dive") {
-        const t = Math.min(1, gullPhaseTimer / gullDiveTime);
-        const eased = t * t * (3 - 2 * t);
-        gullAim.set(gullTargetX, gullTargetY + .22, gullTargetZ);
-        position.lerpVectors(gullDiveStart, gullAim, eased);
-        gullMarker.scale.setScalar(1 + .035 * Math.sin(elapsed * 16));
-        if (gullTouchesCrab()) return true;
-        if (t >= 1) {
-          gullPhase = "recover";
-          gullPhaseTimer = 0;
-          gullMarker.visible = false;
-        }
-      } else {
-        gullAim.set(crab.position.x, 4.8, crab.position.z - 12);
-        position.lerp(gullAim, Math.min(1, dt * 1.8));
-        if (gullPhaseTimer >= gullRecoveryTime) {
-          gullPhase = "cruise";
-          gullPhaseTimer = 0;
-        }
-      }
-      const diving = gullPhase === "warning" || gullPhase === "dive";
-      gull.face(diving ? gullTargetX - position.x : 0, diving ? gullTargetZ - position.z : -1);
-      gull.move(3.4);
-      return false;
-    }
     function updateHud() {
       ctx.ui.hud.bar("Run progress", progress, 100, { label: progress + "%" });
       ctx.ui.hud.score(Math.floor(Math.max(0, startZ - crab.position.z) * 10));
@@ -181,7 +152,7 @@
       if (ended) return;
       ended = true;
       playing = false;
-      gullMarker.visible = false;
+      hazards.hide();
       ctx.music.stop({ fade: 1 });
       ctx.fx.shake(.22);
       updateHud();
@@ -207,16 +178,17 @@
       oceanFloor.visible = true;
       for (const marker of edgeMarkers) marker.object.visible = false;
       for (const swimmer of fish) swimmer.object.visible = true;
-      gull.object.visible = false;
-      gullMarker.visible = false;
+      hazards.enterOcean(startZ);
       crabLane = 1;
       crab.position.set(laneX[crabLane], 0, startZ);
+      crab.rotation.y = 0;
       if (view) view.setTarget(crab);
       jumpY = 0;
       jumpSpeed = 0;
-      catfishGap = 8.5;
-      catfish.position.set(0, .35, startZ + Math.min(catfishGap, 4.5));
-      catfish.visible = true;
+      if (oceanRocks.length === 0) {
+        for (let i = 0; i < 7; i++) oceanRocks.push(asset("beach-rock"));
+      }
+      resetOceanRocks();
       ctx.look.apply("underwater");
       ctx.ui.banner("Beach cleared! Level 2 unlocked!");
       ctx.sfx.play("creature.burble_01");
@@ -231,19 +203,14 @@
       jumpY = 0;
       jumpSpeed = 0;
       stage = "beach";
-      catfishGap = 8.5;
+      for (const rock of oceanRocks) rock.visible = false;
       ended = false;
       playing = true;
       ctx.look.apply("sunny-day");
       crab.position.set(laneX[crabLane], 0, startZ);
       if (view) view.setTarget(crab);
       crab.rotation.y = 0;
-      gullPhase = "cruise";
-      gullPhaseTimer = 0;
-      gull.object.position.set(0, 4.8, startZ - 12);
-      gull.object.visible = true;
-      gullMarker.visible = false;
-      catfish.visible = false;
+      hazards.reset(startZ);
       for (const swimmer of fish) swimmer.object.visible = false;
       sandFloor.visible = true;
       waterFloor.visible = true;
@@ -277,8 +244,9 @@
       crab.position.z -= runSpeed * dt;
       const supportY = wallSupportY(crab.position.x, crab.position.z, crab.position.y);
       crab.position.y = supportY + jumpY;
-      progress = Math.min(100, Math.floor(elapsed));
-      if (updateGull(dt)) {
+      progress = Math.min(100, Math.floor(elapsed * 2));
+      if (hazards.update("beach", dt, elapsed, crab, runSpeed,
+          (x, z) => wallSupportY(x, z, crab.position.y))) {
         finish();
         return;
       }
@@ -314,10 +282,7 @@
       }
       crab.position.y = jumpY;
       crab.position.z -= runSpeed * dt;
-      catfishGap = Math.max(1.25, catfishGap - dt * .18);
-      catfish.position.x += (crab.position.x - catfish.position.x) * Math.min(1, dt * 1.35);
-      catfish.position.y = .3 + Math.sin(elapsed * 5) * .14;
-      catfish.position.z = crab.position.z + Math.min(catfishGap, 4.5);
+      crab.children[0].rotation.z = Math.sin(elapsed * 7.5) * 0.035;
       for (const swimmer of fish) {
         swimmer.object.position.set(
           swimmer.side * (4.7 + Math.sin(elapsed * 1.2 + swimmer.phase) * .8),
@@ -326,18 +291,15 @@
         );
         swimmer.object.rotation.y = swimmer.side > 0 ? Math.PI : 0;
       }
-      if (catfishGap <= 1.3) {
-        if (Math.abs(catfish.position.x - crab.position.x) < 1.25 && jumpY < .7) {
-          finish();
-          return;
-        }
-        catfishGap = 6.5;
-      }
+      if (updateOceanRocks()) return;
+      if (hazards.update("ocean", dt, elapsed, crab, runSpeed, () => 0)) finish();
     }
     function update(dt) {
       if (!playing || ended || levelMenuOpen) return;
       dt = Math.min(dt, .05);
       elapsed += dt;
+      claws.position.y = -.52 + Math.sin(elapsed * 9) * .018;
+      claws.rotation.z = Math.sin(elapsed * 4.5) * .012;
       runSpeed = 5.2 + Math.min(4.8, elapsed * 0.08);
       if (stage === "beach") updateBeach(dt);
       else updateOcean(dt);
@@ -347,10 +309,10 @@
     }
     function onResize(size) { fitWorld(size); }
 
-    const view = ctx.followCamera(crab, { view: "chase", distance: 8, height: 5 });
+    const view = ctx.followCamera(crab, { view: "first-person" });
     const titleReady = ctx.ui.title({
       title: "Crab Escape Run",
-      subtitle: "Tap left or right to snap between lanes, climb the boards, and escape the ocean chase!"
+      subtitle: "Run the beach, then swim forward and dodge coral! Tap left or right to change lanes."
     });
     window.CrabRunMenus.create(ctx, {
       titleReady,

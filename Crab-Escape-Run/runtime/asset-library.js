@@ -6,6 +6,7 @@
   var lib = window.DIYAssetLibrary || {};
   window.DIYAssetLibrary = lib;
   var RASTER_SIZE = 256;
+  var MAX_RASTER = 1024;
   var DEFAULT_SIZE = 96;
   var assets = {};
   var byFactory = {};
@@ -15,6 +16,11 @@
   var failed = {};
   var textures = {};
   var models = {};
+  // Per picture: the largest side the game asks for (device pixels), the side it was drawn at
+  // and the loaded image, so a picture shown big is drawn again sharper.
+  var wanted = {};
+  var drawnAt = {};
+  var images = {};
 
   function slot(entry) {
     return entry.key + "@" + (entry.version || "");
@@ -140,12 +146,19 @@
     try { URL.revokeObjectURL(url); } catch (_error) {}
   }
 
-  // SVGs are drawn once onto a canvas so every renderer gets crisp pixels.
-  function toSource(img, entry) {
+  // SVGs are drawn onto a canvas so every renderer gets crisp pixels: at the largest size the
+  // game shows them (256 to 1024 px on the longest side).
+  function rasterSide(id) {
+    return Math.min(MAX_RASTER, Math.max(RASTER_SIZE, Math.ceil(wanted[id] || 0)));
+  }
+
+  function toSource(img, entry, id) {
     if (entry.kind !== "svg") return img;
     var w = entry.width || img.naturalWidth || RASTER_SIZE;
     var h = entry.height || img.naturalHeight || RASTER_SIZE;
-    var scale = RASTER_SIZE / Math.max(w, h, 1);
+    var side = rasterSide(id);
+    drawnAt[id] = side;
+    var scale = side / Math.max(w, h, 1);
     var canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
@@ -195,9 +208,12 @@
         })
         .then(function (result) {
           if (!result) return null;
-          var source = toSource(result.loaded.img, result.entry);
+          var source = toSource(result.loaded.img, result.entry, id);
           // An SVG is copied onto a canvas, so its blob URL is no longer needed.
-          if (source !== result.loaded.img) releaseUrl(result.loaded.url);
+          if (source !== result.loaded.img) {
+            releaseUrl(result.loaded.url);
+            images[id] = { img: result.loaded.img, entry: result.entry };
+          }
           pictures[id] = source;
           return source;
         })
@@ -230,6 +246,21 @@
   lib.whenLoaded = function () {
     return Promise.all(loadAll());
   };
+
+  // The game shows this picture at options.size: remember it, and draw it again if it is
+  // already drawn smaller than that.
+  function want(entry, options) {
+    var id = slot(entry);
+    var side = Number(options && (options.size || options.width)) || DEFAULT_SIZE;
+    var ratio = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
+    wanted[id] = Math.max(wanted[id] || 0, side * ratio);
+    var image = images[id];
+    if (!image || !pictures[id] || drawnAt[id] >= rasterSide(id)) return;
+    try {
+      pictures[id] = toSource(image.img, image.entry, id);
+      delete textures[id];
+    } catch (_error) {}
+  }
 
   function textureFor(PIXI, entry) {
     var id = slot(entry);
@@ -469,6 +500,7 @@
       }
       var picture = isPicture(entry) ? entry : fallbackPicture(entry);
       if (!picture) return emptyContainer(PIXI, key);
+      want(picture, options);
       var box = defaultBox(picture, options);
       return buildSprite(PIXI, picture, box) || swapWhenLoaded(PIXI, picture, null, box);
     };
@@ -640,7 +672,7 @@
   };
 })();
 
-window.DIYAssetLibrary.install({"assets":[{"key":"blue-crab","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"blue-catfish","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-rock","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"home-burrow","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-seagull","dimension":"3d","factory":null,"version":"v2","kind":"look","align":"center","look":{"model":"animal.swing_pigeon","colors":{"feathers":"#f4f1e6","feathers_accent":"#7c929d","beak":"#e9aa38","skin":"#d27a67"}}},{"key":"checkpoint-check","dimension":"3d","factory":null,"version":"v2","kind":"model","align":"center"},{"key":"parkour-wall","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"parkour-boards","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"level-two-checkpoint-sign","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"}]});
+window.DIYAssetLibrary.install({"assets":[{"key":"blue-crab","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"blue-catfish","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-rock","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"home-burrow","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-seagull","dimension":"3d","factory":null,"version":"v2","kind":"look","align":"center","look":{"model":"animal.swing_pigeon","colors":{"feathers":"#f4f1e6","feathers_accent":"#7c929d","beak":"#e9aa38","skin":"#d27a67"}}},{"key":"checkpoint-check","dimension":"3d","factory":null,"version":"v2","kind":"model","align":"center"},{"key":"parkour-wall","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"parkour-boards","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"level-two-checkpoint-sign","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"crab-first-person-claws","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"}]});
 window.DIYAssetLibrary.defineModel("blue-crab", "v1", function (THREE, options) {
 const g=new THREE.Group(); const blue=new THREE.MeshStandardMaterial({color:0x168bd6,roughness:.48}); const light=new THREE.MeshStandardMaterial({color:0x60d8f0}); const white=new THREE.MeshStandardMaterial({color:0xffffff}); const black=new THREE.MeshStandardMaterial({color:0x172849}); function ball(x,y,z,sx,sy,sz,m){const o=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);g.add(o);} ball(0,.38,0,.55,.25,.42,blue);ball(0,.49,.21,.39,.13,.25,light);for(let k of [-1,1]){ball(k*.26,.76,.24,.075,.21,.075,blue);ball(k*.26,.91,.27,.13,.14,.12,white);ball(k*.26,.94,.38,.055,.065,.04,black);for(let i=0;i<3;i++){let leg=new THREE.Mesh(new THREE.CylinderGeometry(.045,.065,.48,6),blue);leg.position.set(k*(.45+i*.10),.24,(i-1)*.23);leg.rotation.z=k*.8;g.add(leg);}ball(k*.78,.43,.28,.24,.18,.21,blue);ball(k*.82,.47,.49,.13,.13,.18,light);}return g;
 });
@@ -728,5 +760,31 @@ g.add(face);
 const cap = new THREE.Mesh(new THREE.BoxGeometry(7.35, 0.13, 0.25), board);
 cap.position.set(0, 2.68, 0);
 g.add(cap);
+return g;
+});
+window.DIYAssetLibrary.defineModel("crab-first-person-claws", "v1", function (THREE, options) {
+const g = new THREE.Group();
+const blue = new THREE.MeshStandardMaterial({ color: 0x168bd6, roughness: 0.48 });
+const light = new THREE.MeshStandardMaterial({ color: 0x60d8f0, roughness: 0.42 });
+function ball(x, y, z, sx, sy, sz, material) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), material);
+  mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); g.add(mesh);
+}
+function link(a, b, radiusA, radiusB, material) {
+  const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
+  const direction = end.clone().sub(start);
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radiusB, radiusA, direction.length(), 10), material);
+  mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  g.add(mesh);
+}
+for (const side of [-1, 1]) {
+  link([side * 0.18, -0.22, -0.18], [side * 0.43, -0.04, 0.04], 0.12, 0.10, blue);
+  ball(side * 0.46, -0.02, 0.08, 0.16, 0.13, 0.18, blue);
+  link([side * 0.48, 0.01, 0.17], [side * 0.58, 0.16, 0.34], 0.09, 0.06, light);
+  link([side * 0.48, -0.04, 0.18], [side * 0.58, -0.19, 0.34], 0.09, 0.06, light);
+  ball(side * 0.58, 0.16, 0.34, 0.075, 0.065, 0.08, blue);
+  ball(side * 0.58, -0.19, 0.34, 0.075, 0.065, 0.08, blue);
+}
 return g;
 });

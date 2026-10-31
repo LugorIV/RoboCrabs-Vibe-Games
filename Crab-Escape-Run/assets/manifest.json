@@ -228,6 +228,23 @@
             "path": "assets/library/level-two-checkpoint-sign/v1.js"
           }
         ]
+      },
+      {
+        "key": "crab-first-person-claws",
+        "name": "Crab First-Person Claws",
+        "dimension": "3d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "model",
+            "source": "ai",
+            "createdAt": "2026-10-27T21:06:16Z",
+            "note": "Crab First-Person Claws",
+            "path": "assets/library/crab-first-person-claws/v1.js"
+          }
+        ]
       }
     ]
   },

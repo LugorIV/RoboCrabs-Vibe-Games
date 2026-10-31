@@ -46,9 +46,8 @@
     ctx.layers.world.addChild(player);
 
     var w = 0, h = 0, left = 0, right = 0, top = 0, bottom = 0;
-    var timeLeft = 20, score = 0, catches = 0, playing = false, stream = null;
+    var timeLeft = 20, score = 0, stillTime = 0, playing = false, stream = null;
     var placeCooldown = 0;
-    var stillTime = 0;
 
     function clamp(value, min, max) {
       return Math.max(min, Math.min(max, value));
@@ -143,9 +142,8 @@
       if (stream) { stream.stop(); stream = null; }
       timeLeft = 20;
       score = 0;
-      catches = 0;
-      placeCooldown = 0;
       stillTime = 0;
+      placeCooldown = 0;
       player.visible = true;
       player.x = clamp(w * 0.5, left + boatDisplayHalfWidth, right - boatDisplayHalfWidth);
       player.y = top - boatSurfaceOffset;
@@ -158,7 +156,7 @@
         enemy.speed = swimmerSpeed(enemy);
         enemy.active = true;
         enemy.respawn = 0;
-        enemy.art.visible = true;
+        enemy.art.visible = enemy.active;
         enemy.art.x = enemy.x;
         enemy.art.y = enemy.y;
         setSwimmerDirection(enemy);
@@ -200,6 +198,14 @@
       ctx.ui.popup("Trap away!", slot.x, slot.y - 36);
     }
 
+    function loseGame() {
+      if (!playing) return;
+      playing = false;
+      if (stream) { stream.stop(); stream = null; }
+      ctx.emit("lose");
+      ctx.ui.gameOver({ score: score });
+    }
+
     function catchSwimmer(enemy, trap) {
       enemy.active = false;
       enemy.art.visible = false;
@@ -207,27 +213,17 @@
       trap.art.visible = false;
 
       if (enemy.kind === "crab") {
-        playing = false;
-        if (stream) { stream.stop(); stream = null; }
         ctx.fx.shake(0.35);
-        ctx.emit("lose");
-        ctx.ui.gameOver({ score: score });
+        loseGame();
         return;
       }
 
       enemy.respawn = 1.25;
-      score += 10;
-      catches++;
+      score += 11;
       refreshHud();
       ctx.sfx.play("water.bubble_02");
       ctx.fx.burst(trap.x, trap.y);
       ctx.ui.popup("+10", trap.x, trap.y - 28);
-      if (catches >= 8) {
-        playing = false;
-        if (stream) { stream.stop(); stream = null; }
-        ctx.emit("win");
-        ctx.ui.win({ score: score, stars: 3 });
-      }
     }
 
     function update(dt) {
@@ -235,27 +231,21 @@
       timeLeft = Math.max(0, timeLeft - dt);
       ctx.ui.hud.timer(Math.ceil(timeLeft));
       if (timeLeft <= 0) {
-        playing = false;
-        if (stream) { stream.stop(); stream = null; }
-        ctx.emit("lose");
-        ctx.ui.gameOver({ score: score });
+        loseGame();
         return;
       }
       placeCooldown = Math.max(0, placeCooldown - dt);
-      var dx = (ctx.input.isDown("right") ? 1 : 0) - (ctx.input.isDown("left") ? 1 : 0);
       var previousX = player.x;
+      var dx = (ctx.input.isDown("right") ? 1 : 0) - (ctx.input.isDown("left") ? 1 : 0);
       player.x = clamp(player.x + dx * 230 * dt, left + boatDisplayHalfWidth, right - boatDisplayHalfWidth);
       player.y = top - boatSurfaceOffset;
-      if (Math.abs(player.x - previousX) > 0.01) {
+      if (Math.abs(player.x - previousX) > 0.5) {
         stillTime = 0;
       } else {
         stillTime += dt;
       }
       if (stillTime >= 5) {
-        playing = false;
-        if (stream) { stream.stop(); stream = null; }
-        ctx.emit("lose");
-        ctx.ui.gameOver({ score: score });
+        loseGame();
         return;
       }
 
@@ -313,7 +303,7 @@
     refreshHud();
     ctx.ui.title({
       title: "Catfish Trap Boat",
-      subtitle: "Trap 8 catfish in 20 seconds to win, but avoid the blue crabs!"
+      subtitle: "Catch catfish for points and avoid crabs. Keep moving: if your boat stays still for 5 seconds, the game ends."
     }).then(reset);
 
     return {
