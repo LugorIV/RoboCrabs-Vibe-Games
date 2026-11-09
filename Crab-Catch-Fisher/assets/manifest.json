@@ -127,6 +127,31 @@
             "path": "assets/library/sea-coral/v1.svg"
           }
         ]
+      },
+      {
+        "key": "catfish",
+        "name": "Surprise Catfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-08T20:16:22Z",
+            "note": "Surprise Catfish",
+            "path": "assets/library/catfish/v1.svg"
+          },
+          {
+            "id": "v2",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-08T20:20:10Z",
+            "note": "Surprise Catfish with Two Eyes",
+            "path": "assets/library/catfish/v2.svg"
+          }
+        ]
       }
     ]
   },
@@ -465,6 +490,81 @@
       ]
     },
     {
+      "id": "creature.screech_01",
+      "name": "Screech 1",
+      "category": "creature",
+      "description": "A loud creature scream, suitable for a monster encounter moment",
+      "path": "sfx/creature/screech_01.mp3",
+      "duration": 0.915,
+      "loop": false,
+      "peaks": [
+        0.0,
+        0.7,
+        1.0,
+        0.8,
+        0.6,
+        0.4,
+        0.5,
+        0.6,
+        0.4,
+        0.4,
+        0.4,
+        0.3,
+        0.5,
+        0.4,
+        0.4,
+        0.3,
+        0.3,
+        0.4,
+        0.3,
+        0.4,
+        0.3,
+        0.4,
+        0.4,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.3,
+        0.2,
+        0.3,
+        0.3,
+        0.2,
+        0.2,
+        0.2,
+        0.3,
+        0.3,
+        0.3,
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
       "id": "water.bubble_01",
       "name": "Bubble 1",
       "category": "water",
@@ -768,5 +868,5 @@
   "musicUses": {
     "music.ukulele_song": "Main theme"
   },
-  "musicUsesKey": "880d1e03dc2051d8"
+  "musicUsesKey": "122edfd7b27daf5e"
 }
