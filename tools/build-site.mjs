@@ -6,6 +6,7 @@
 // and, in the copy only, its index.html gets:
 //   - the graphics engine DIY.org normally provides (PixiJS for 2d, three.js for 3d)
 //   - a small "Games" button that leads back to the menu page
+//   - the GoatCounter play counter, if goatcounterCode is set in site/games.json
 // The menu page (site/index.html) and site/games.json are copied alongside.
 //
 // Usage: node tools/build-site.mjs        then open _site/ with any web server.
@@ -35,6 +36,15 @@ const config = JSON.parse(fs.readFileSync(path.join(SITE, "games.json"), "utf8")
 const extras = config.games || {};
 const games = [];
 
+// Counts each time a game page is opened. Off until goatcounterCode is set in site/games.json.
+const counterCode = config.goatcounterCode || "";
+if (counterCode && !/^[a-z0-9-]+$/.test(counterCode)) {
+  fail(`goatcounterCode "${counterCode}" in site/games.json should be just the code, like "robocrabs", not a full link`);
+}
+const counter = counterCode
+  ? `<script data-goatcounter="https://${counterCode}.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>\n  `
+  : "";
+
 const folders = fs.readdirSync(ROOT, { withFileTypes: true })
   .filter((d) => d.isDirectory() && !d.name.startsWith(".") && !d.name.startsWith("_"))
   .filter((d) => fs.existsSync(path.join(ROOT, d.name, "project.manifest.json")))
@@ -55,7 +65,8 @@ for (const folder of folders) {
   if (firstScript === -1) fail(`${folder}: no <script> tag found in its index.html`);
   const injected =
     `<script src="../${engine}" defer></script>\n  ` +
-    `<script src="../lib/showcase.js" defer></script>\n  `;
+    `<script src="../lib/showcase.js" defer></script>\n  ` +
+    counter;
   html = html.slice(0, firstScript) + injected + html.slice(firstScript);
   fs.writeFileSync(entry, html);
 
