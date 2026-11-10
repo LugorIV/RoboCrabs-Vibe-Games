@@ -672,119 +672,19 @@
   };
 })();
 
-window.DIYAssetLibrary.install({"assets":[{"key":"blue-crab","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"blue-catfish","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-rock","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"home-burrow","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"beach-seagull","dimension":"3d","factory":null,"version":"v2","kind":"look","align":"center","look":{"model":"animal.swing_pigeon","colors":{"feathers":"#f4f1e6","feathers_accent":"#7c929d","beak":"#e9aa38","skin":"#d27a67"}}},{"key":"checkpoint-check","dimension":"3d","factory":null,"version":"v2","kind":"model","align":"center"},{"key":"parkour-wall","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"parkour-boards","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"level-two-checkpoint-sign","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"crab-first-person-claws","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"}]});
-window.DIYAssetLibrary.defineModel("blue-crab", "v1", function (THREE, options) {
-const g=new THREE.Group(); const blue=new THREE.MeshStandardMaterial({color:0x168bd6,roughness:.48}); const light=new THREE.MeshStandardMaterial({color:0x60d8f0}); const white=new THREE.MeshStandardMaterial({color:0xffffff}); const black=new THREE.MeshStandardMaterial({color:0x172849}); function ball(x,y,z,sx,sy,sz,m){const o=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);g.add(o);} ball(0,.38,0,.55,.25,.42,blue);ball(0,.49,.21,.39,.13,.25,light);for(let k of [-1,1]){ball(k*.26,.76,.24,.075,.21,.075,blue);ball(k*.26,.91,.27,.13,.14,.12,white);ball(k*.26,.94,.38,.055,.065,.04,black);for(let i=0;i<3;i++){let leg=new THREE.Mesh(new THREE.CylinderGeometry(.045,.065,.48,6),blue);leg.position.set(k*(.45+i*.10),.24,(i-1)*.23);leg.rotation.z=k*.8;g.add(leg);}ball(k*.78,.43,.28,.24,.18,.21,blue);ball(k*.82,.47,.49,.13,.13,.18,light);}return g;
+window.DIYAssetLibrary.install({"assets":[{"key":"crab-runner","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"blue-catfish","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"subway-train","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"track-barrier","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"gold-coin","dimension":"3d","factory":null,"version":"v1","kind":"model","align":"center"},{"key":"subway-rock","dimension":"3d","factory":null,"version":"v2","kind":"look","align":"center","look":{"model":"nature.urban_rock_s","colors":{"rock":"#756f68"}}},{"key":"pickup","dimension":"3d","factory":"item0502","version":"v1","kind":"catalog","align":"bottom","target":"item0502"}]});
+window.DIYAssetLibrary.defineModel("crab-runner", "v1", function (THREE, options) {
+const g=new THREE.Group();const mat=c=>new THREE.MeshStandardMaterial({color:c,roughness:.55});const red=mat('#f4693e'),dark=mat('#c84039'),cream=mat('#ffbf77'),white=mat('#ffffff'),black=mat('#132d43');function ball(x,y,z,sx,sy,sz,m){let a=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),m);a.position.set(x,y,z);a.scale.set(sx,sy,sz);g.add(a);return a}ball(0,.46,0,.56,.35,.43,red);ball(0,.28,.35,.37,.13,.13,cream);for(let side of [-1,1]){for(let i=0;i<3;i++){let leg=new THREE.Mesh(new THREE.CylinderGeometry(.065,.09,.47,8),dark);leg.position.set(side*(.55+i*.12),.23,(i-1)*.25);leg.rotation.z=side*.8;g.add(leg)}ball(side*.75,.56,.35,.27,.2,.24,red);ball(side*.83,.63,.54,.16,.11,.15,cream);ball(side*.28,.89,.24,.115,.23,.11,red);ball(side*.28,1.06,.27,.145,.15,.14,white);ball(side*.28,1.07,.39,.057,.075,.04,black)}return g;
 });
 window.DIYAssetLibrary.defineModel("blue-catfish", "v1", function (THREE, options) {
-const g=new THREE.Group();const b=new THREE.MeshStandardMaterial({color:0x2367ae,roughness:.5});const pale=new THREE.MeshStandardMaterial({color:0x9be0df});const ink=new THREE.MeshStandardMaterial({color:0x10243b});function ell(x,y,z,a,c,d,m){let o=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),m);o.position.set(x,y,z);o.scale.set(a,c,d);g.add(o);}ell(0,.55,0,.67,.4,1.1,b);ell(0,.36,.35,.53,.19,.65,pale);ell(0,.62,1,.68,.32,.32,b);for(let x of [-.39,.39]){ell(x,.77,.99,.11,.12,.09,ink);let whisker=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.7,6),pale);whisker.position.set(x*1.5,.4,1.23);whisker.rotation.z=x>0?-.8:.8;g.add(whisker);}let tail=new THREE.Mesh(new THREE.ConeGeometry(.59,.9,3),b);tail.position.set(0,.55,-1.3);tail.rotation.x=Math.PI/2;g.add(tail);return g;
+const g=new THREE.Group();let blue=new THREE.MeshStandardMaterial({color:'#148ad7',roughness:.42}),light=new THREE.MeshStandardMaterial({color:'#85e5f4'}),ink=new THREE.MeshStandardMaterial({color:'#12354d'});function b(x,y,z,a,c,d,m){let o=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),m);o.position.set(x,y,z);o.scale.set(a,c,d);g.add(o)}b(0,.48,0,.43,.33,.62,blue);b(0,.32,.3,.37,.15,.33,light);b(0,.49,-.63,.14,.2,.35,blue);for(let s of [-1,1]){b(s*.26,.68,.37,.12,.12,.12,light);b(s*.26,.7,.47,.05,.06,.04,ink);let w=new THREE.Mesh(new THREE.CylinderGeometry(.025,.015,.65,6),light);w.position.set(s*.53,.33,.55);w.rotation.z=s*1.1;g.add(w);b(s*.4,.47,-.3,.25,.06,.18,blue)}let fin=new THREE.Mesh(new THREE.ConeGeometry(.22,.4,4),blue);fin.position.set(0,.94,-.2);g.add(fin);return g;
 });
-window.DIYAssetLibrary.defineModel("beach-rock", "v1", function (THREE, options) {
-const g=new THREE.Group();const m=new THREE.MeshStandardMaterial({color:0xe87564,roughness:1});const pale=new THREE.MeshStandardMaterial({color:0xffb778});let o=new THREE.Mesh(new THREE.DodecahedronGeometry(.62,0),m);o.position.y=.5;o.scale.set(1,.8,.9);g.add(o);for(let x of [-.3,.1,.34]){let p=new THREE.Mesh(new THREE.DodecahedronGeometry(.18,0),pale);p.position.set(x,.94,Math.abs(x)*.35);g.add(p);}return g;
+window.DIYAssetLibrary.defineModel("subway-train", "v1", function (THREE, options) {
+const g=new THREE.Group(),m=c=>new THREE.MeshStandardMaterial({color:c,roughness:.48});function box(x,y,z,w,h,d,c){let o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m(c));o.position.set(x,y,z);g.add(o)}box(0,1.1,0,1.62,2.15,4.6,'#fae8b0');box(0,.43,0,1.66,.35,4.7,'#fd6374');box(0,1.48,2.34,1.3,.85,.06,'#44bde4');box(0,.6,2.36,.95,.17,.08,'#fff5be');for(let s of [-1,1]){for(let z of [-1.3,0,1.3])box(s*.82,1.5,z,.045,.74,.8,'#46b9df')}box(0,2.22,0,1.65,.1,4.6,'#fd6374');return g;
 });
-window.DIYAssetLibrary.defineModel("home-burrow", "v1", function (THREE, options) {
-const g=new THREE.Group();const sand=new THREE.MeshStandardMaterial({color:0xe3a65f,roughness:1});const dark=new THREE.MeshStandardMaterial({color:0x49322d});const green=new THREE.MeshStandardMaterial({color:0x51bd7d});let mound=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),sand);mound.scale.set(1.7,.85,1.1);mound.position.y=.35;g.add(mound);let door=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),dark);door.scale.set(.72,.58,.12);door.position.set(0,.44,1.04);g.add(door);for(let x of [-1.3,1.3]){let leaf=new THREE.Mesh(new THREE.ConeGeometry(.24,.8,5),green);leaf.position.set(x,.78,.1);g.add(leaf);}return g;
+window.DIYAssetLibrary.defineModel("track-barrier", "v1", function (THREE, options) {
+const g=new THREE.Group();function box(x,y,z,w,h,d,c){let o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:c}));o.position.set(x,y,z);g.add(o)}box(0,.48,0,1.65,.86,.26,'#ffca48');for(let x of [-.55,0,.55]){let o=new THREE.Mesh(new THREE.BoxGeometry(.18,.93,.29),new THREE.MeshStandardMaterial({color:'#fa5d54'}));o.position.set(x,.48,0);o.rotation.z=-.4;g.add(o)}box(-.62,.15,0,.12,.3,.35,'#42557b');box(.62,.15,0,.12,.3,.35,'#42557b');return g;
 });
-window.DIYAssetLibrary.defineModel("checkpoint-check", "v2", function (THREE, options) {
-const g = new THREE.Group();
-const green = new THREE.MeshStandardMaterial({ color: 0x40e38d, emissive: 0x0a6b37, roughness: 0.32 });
-const shortStroke = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.38, 0.14), green);
-shortStroke.position.set(-0.15, 0.02, 0);
-shortStroke.rotation.z = 0.785;
-g.add(shortStroke);
-const longStroke = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.58, 0.14), green);
-longStroke.position.set(0.16, 0.09, 0);
-longStroke.rotation.z = -0.785;
-g.add(longStroke);
-return g;
-});
-window.DIYAssetLibrary.defineModel("parkour-wall", "v1", function (THREE, options) {
-const g = new THREE.Group();
-const stone = new THREE.MeshStandardMaterial({ color: 0x1d2638, roughness: .72, metalness: .12 });
-const cap = new THREE.MeshStandardMaterial({ color: 0xf4c542, roughness: .5, metalness: .18 });
-const seam = new THREE.MeshStandardMaterial({ color: 0x19b7d8, roughness: .45, emissive: 0x063d55 });
-const stripe = new THREE.MeshStandardMaterial({ color: 0xf04b5f, roughness: .5, emissive: 0x40101b });
-function block(w, h, d, x, y, z, m) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); g.add(o); }
-block(6.2, 1.38, .5, 0, .69, 0, stone);
-block(6.35, .14, .6, 0, 1.42, 0, cap);
-for (let x = -2.5; x <= 2.5; x += 1.25) {
-  block(1.12, .13, .035, x, .46, .267, seam);
-  block(1.12, .13, .035, x, .94, .267, seam);
-  block(1.12, .13, .035, x, .46, -.267, seam);
-  block(1.12, .13, .035, x, .94, -.267, seam);
-}
-for (const x of [-1.88, 0, 1.88]) {
-  block(.18, 1.08, .04, x, .72, .29, stripe);
-  block(.18, 1.08, .04, x, .72, -.29, stripe);
-}
-return g;
-});
-window.DIYAssetLibrary.defineModel("parkour-boards", "v1", function (THREE, options) {
-const g = new THREE.Group();
-const wood = new THREE.MeshStandardMaterial({ color: 0xb96f3b, roughness: 1 });
-const dark = new THREE.MeshStandardMaterial({ color: 0x70452f, roughness: 1 });
-for (let z = -1.35; z <= 1.36; z += .54) {
-  const plank = new THREE.Mesh(new THREE.BoxGeometry(6.2, .14, .45), wood);
-  plank.position.set(0, 0, z); g.add(plank);
-}
-for (const x of [-2.88, 2.88]) {
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(.2, .2, 3.15), dark);
-  rail.position.set(x, -.17, 0); g.add(rail);
-}
-return g;
-});
-window.DIYAssetLibrary.defineModel("level-two-checkpoint-sign", "v1", function (THREE, options) {
-const g = new THREE.Group();
-const wood = new THREE.MeshStandardMaterial({ color: 0x9a5635, roughness: 1 });
-const board = new THREE.MeshStandardMaterial({ color: 0xf6b84a, roughness: 0.8 });
-const postGeo = new THREE.BoxGeometry(0.16, 2.6, 0.16);
-for (const x of [-3.35, 3.35]) {
-  const post = new THREE.Mesh(postGeo, wood);
-  post.position.set(x, 1.3, 0);
-  g.add(post);
-}
-const plaque = new THREE.Mesh(new THREE.BoxGeometry(7.15, 1.05, 0.18), wood);
-plaque.position.set(0, 2.1, 0);
-g.add(plaque);
-const face = new THREE.Mesh(new THREE.PlaneGeometry(6.9, 0.82), new THREE.MeshBasicMaterial({ map: (() => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 900; canvas.height = 180;
-  const c = canvas.getContext("2d");
-  c.fillStyle = "#f6b84a"; c.fillRect(0, 0, 900, 180);
-  c.fillStyle = "#7b3f25"; c.font = "bold 112px sans-serif";
-  c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("LEVEL 2", 450, 90);
-  return new THREE.CanvasTexture(canvas);
-})() }));
-face.position.set(0, 2.1, 0.096);
-g.add(face);
-const cap = new THREE.Mesh(new THREE.BoxGeometry(7.35, 0.13, 0.25), board);
-cap.position.set(0, 2.68, 0);
-g.add(cap);
-return g;
-});
-window.DIYAssetLibrary.defineModel("crab-first-person-claws", "v1", function (THREE, options) {
-const g = new THREE.Group();
-const blue = new THREE.MeshStandardMaterial({ color: 0x168bd6, roughness: 0.48 });
-const light = new THREE.MeshStandardMaterial({ color: 0x60d8f0, roughness: 0.42 });
-function ball(x, y, z, sx, sy, sz, material) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), material);
-  mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); g.add(mesh);
-}
-function link(a, b, radiusA, radiusB, material) {
-  const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
-  const direction = end.clone().sub(start);
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radiusB, radiusA, direction.length(), 10), material);
-  mesh.position.copy(start).add(end).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  g.add(mesh);
-}
-for (const side of [-1, 1]) {
-  link([side * 0.18, -0.22, -0.18], [side * 0.43, -0.04, 0.04], 0.12, 0.10, blue);
-  ball(side * 0.46, -0.02, 0.08, 0.16, 0.13, 0.18, blue);
-  link([side * 0.48, 0.01, 0.17], [side * 0.58, 0.16, 0.34], 0.09, 0.06, light);
-  link([side * 0.48, -0.04, 0.18], [side * 0.58, -0.19, 0.34], 0.09, 0.06, light);
-  ball(side * 0.58, 0.16, 0.34, 0.075, 0.065, 0.08, blue);
-  ball(side * 0.58, -0.19, 0.34, 0.075, 0.065, 0.08, blue);
-}
-return g;
+window.DIYAssetLibrary.defineModel("gold-coin", "v1", function (THREE, options) {
+const g=new THREE.Group();let coin=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.09,24),new THREE.MeshStandardMaterial({color:'#ffd642',metalness:.55,roughness:.2}));coin.rotation.x=Math.PI/2;coin.position.y=.46;g.add(coin);let gem=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),new THREE.MeshStandardMaterial({color:'#fff3a0',emissive:'#b97515',emissiveIntensity:.3}));gem.position.set(0,.46,.055);g.add(gem);return g;
 });
