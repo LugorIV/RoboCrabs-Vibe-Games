@@ -2,6 +2,7 @@
   "siteTitle": "RoboCrabs Vibe Games",
   "tagline": "Games made by FLL Team: RoboCrabs #56774 at DIY.org. Pick one and play!",
   "feedbackUrl": "https://forms.gle/w8akNLgLJRTzbdKR8",
+  "goatcounterCode": "",
   "games": {
     "Crab-Escape-Run": {
       "emoji": "🏃",

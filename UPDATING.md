@@ -16,6 +16,7 @@ to that copy:
 | --- | --- |
 | The graphics engine: PixiJS for 2D games, three.js for 3D games (from `site/lib/`) | DIY.org adds these itself when a game runs on its website, but leaves them out of the download. Without them a game shows "PixiJS runtime did not load" or a blank screen. |
 | A small **← Games** button in the bottom-left corner (`site/lib/showcase.js`) | So players can get back to the menu. |
+| The GoatCounter play counter, if `goatcounterCode` is set in `site/games.json` | So we can see how many times each game is opened. |
 | The menu page (`site/index.html`) and the list of games | Built from every folder that has a `project.manifest.json`. |
 
 The build reads each game's `project.manifest.json` (`"renderMode": "2d"` or `"3d"`)
@@ -44,6 +45,7 @@ Edit `site/games.json`:
 - `siteTitle`, `tagline`: the heading at the top of the menu page.
 - `feedbackUrl`: the link for the **Tell us what you think** buttons (see below). When
   it's empty, the buttons are hidden.
+- `goatcounterCode`: turns on play counting (see below). When it's empty, nothing is counted.
 - `games`: one entry per folder name, with `emoji`, `description` and `creator`. Games
   are listed in this order.
 
@@ -83,6 +85,21 @@ The form opens inside the site's own feedback page (`site/feedback.html`), with 
 If the form shows up blank there, add the form's embed link as `feedbackEmbedUrl` in
 `site/games.json`: in Google Forms click **Send**, choose the **< >** tab, and copy the
 `https://docs.google.com/forms/d/e/…/viewform?embedded=true` link from the code it shows.
+
+## Counting plays
+
+The site can count how many times each game is opened, using
+[GoatCounter](https://www.goatcounter.com). It's free for normal public use and works
+without cookies or storing personal data.
+
+1. Create a GoatCounter account. The code you choose becomes the address of your stats
+   page: `robocrabs` would be `robocrabs.goatcounter.com`.
+2. Put that code in `goatcounterCode` in `site/games.json` and commit. To turn counting
+   off, make it empty again.
+
+Your stats page lists each game's address with its count. A count means the game page
+was opened: reloading adds one, **Play again** inside a game doesn't, and previews on
+your own computer aren't counted. Players using an ad blocker may not be counted.
 
 ## Previewing on your computer (optional)
 
