@@ -204,7 +204,7 @@
           .then(function (result) {
             if (!result.count) return;
             badge.textContent = result.count;
-            badge.setAttribute("aria-label", "Played " + result.count + " times");
+            badge.setAttribute("aria-label", "Plays: " + result.count);
           })
           .catch(function () {});
       }
