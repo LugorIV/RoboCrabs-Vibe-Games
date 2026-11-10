@@ -97,9 +97,16 @@ without cookies or storing personal data.
 2. Put that code in `goatcounterCode` in `site/games.json` and commit. To turn counting
    off, make it empty again.
 
-Your stats page lists each game's address with its count. A count means the game page
-was opened: reloading adds one, **Play again** inside a game doesn't, and previews on
-your own computer aren't counted. Players using an ad blocker may not be counted.
+Your stats page lists each game's address with its count. To count every time a game
+is opened, turn off **Sessions** under **Settings → Data collection** in GoatCounter;
+reloading a game then adds one too. With Sessions on, the same browser opening the same
+game again within 8 hours doesn't add another count. **Play again** inside a game
+doesn't count, previews on your own computer aren't counted, and players using an ad
+blocker may not be counted.
+
+Each game's picture on the menu page shows a ▶ badge with its count. The badges stay
+hidden until **Allow adding visitor counts on your website** is turned on in
+GoatCounter's settings. The number can lag by up to four hours.
 
 ## Previewing on your computer (optional)
 

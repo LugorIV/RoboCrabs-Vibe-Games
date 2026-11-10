@@ -77,6 +77,7 @@
       overflow: hidden;
     }
     .play {
+      position: relative;
       display: flex;
       flex-direction: column;
       flex: 1;
@@ -87,7 +88,7 @@
     }
     .play:hover { transform: translateY(-3px); }
     .play:focus-visible { outline: 4px solid var(--ring); outline-offset: -4px; border-radius: 20px; }
-    .emoji { font-size: 3.2rem; line-height: 1; }
+    .emoji { margin-top: 22px; font-size: 3.2rem; line-height: 1; }
     .cover {
       display: block;
       width: calc(100% + 40px);
@@ -99,6 +100,28 @@
     .card h2 { margin: 14px 0 6px; font-size: 1.4rem; }
     .desc { margin: 0; color: var(--muted); flex: 1; }
     .creator { margin: 10px 0 0; font-size: .95rem; font-weight: 600; }
+    .plays {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, .72);
+      color: #fff;
+      font-size: .9rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .plays::before {
+      content: "";
+      border-left: 10px solid currentColor;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+    }
+    .plays:empty { display: none; }
     .tag {
       display: inline-block;
       margin-top: 10px;
@@ -166,6 +189,26 @@
         return "feedback.html" + (gameTitle ? "?game=" + encodeURIComponent(gameTitle) : "");
       }
 
+      // How many times this game's page has been opened, from GoatCounter.
+      // The badge stays hidden if the count can't be loaded.
+      function showPlayCount(code, folder, badge) {
+        // GoatCounter stores paths without the trailing slash.
+        var path = new URL(folder + "/", location.href).pathname.replace(/\/$/, "");
+        fetch("https://" + code + ".goatcounter.com/counter/" + encodeURIComponent(path) + ".json")
+          .then(function (r) {
+            // GoatCounter answers 404 for a game nobody has played yet.
+            if (r.status === 404) return { count: "0" };
+            if (!r.ok) throw new Error("no play count");
+            return r.json();
+          })
+          .then(function (result) {
+            if (!result.count) return;
+            badge.textContent = result.count;
+            badge.setAttribute("aria-label", "Plays: " + result.count);
+          })
+          .catch(function () {});
+      }
+
       fetch("games.json", { cache: "no-cache" })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -198,6 +241,10 @@
             play.appendChild(el("h2", "", game.title));
             play.appendChild(el("p", "desc", game.description));
             if (game.creator) play.appendChild(el("p", "creator", "Made by " + game.creator));
+            var plays = el("span", "plays");
+            plays.setAttribute("role", "img");
+            play.appendChild(plays);
+            if (data.goatcounterCode) showPlayCount(data.goatcounterCode, game.folder, plays);
             play.appendChild(el("span", "tag", game.renderMode === "3d" ? "3D" : "2D"));
             play.appendChild(el("span", "button", "▶ Play"));
             card.appendChild(play);
