@@ -139,6 +139,12 @@
     }
     .feedback-line:empty { display: none; }
     .feedback-line a { color: var(--text); font-weight: 700; }
+    .visitor-count {
+      margin: 8px auto 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    .visitor-count:empty { display: none; }
     .notice { grid-column: 1 / -1; text-align: center; }
   </style>
 </head>
@@ -148,6 +154,7 @@
     <h1 id="site-title">RoboCrabs Vibe Games</h1>
     <p class="tagline" id="tagline">Games made by FLL Team: RoboCrabs #56774 at DIY.org. Pick one and play!</p>
     <p class="feedback-line" id="feedback-line"></p>
+    <p class="visitor-count" id="visitor-count"></p>
   </header>
   <main id="games" aria-live="polite"><p class="notice">Loading games…</p></main>
   <script>
@@ -164,6 +171,21 @@
       // The form opens inside feedback.html (same tab) so there is always a way back to the games.
       function feedbackLink(gameTitle) {
         return "feedback.html" + (gameTitle ? "?game=" + encodeURIComponent(gameTitle) : "");
+      }
+
+      // The total for all games from GoatCounter. The line stays hidden if it can't be loaded.
+      function showVisitorCount(code) {
+        fetch("https://" + code + ".goatcounter.com/counter/TOTAL.json")
+          .then(function (r) {
+            if (!r.ok) throw new Error("no visitor count");
+            return r.json();
+          })
+          .then(function (result) {
+            if (!result.count || result.count === "0") return;
+            document.getElementById("visitor-count").textContent =
+              "We've had " + result.count + (result.count === "1" ? " visitor" : " visitors");
+          })
+          .catch(function () {});
       }
 
       fetch("games.json", { cache: "no-cache" })
@@ -216,6 +238,8 @@
             a.href = feedbackLink("");
             line.appendChild(a);
           }
+
+          if (data.goatcounterCode) showVisitorCount(data.goatcounterCode);
         })
         .catch(function () {
           list.innerHTML = '<p class="notice">Sorry, the game list could not load. Please refresh the page.</p>';
