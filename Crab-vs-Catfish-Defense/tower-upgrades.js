@@ -24,6 +24,24 @@
       items.push({ id: "back", label: "Build", icon: "🐚" });
       return items;
     }
+    const towerSpecs = {
+      bubble: { range: w => Math.min(140, Math.max(100, w * .32)), cooldown: .48, damage: 1, color: 0x63eaff, width: 4, radius: 6 },
+      cannon: { range: w => Math.min(170, Math.max(125, w * .42)), cooldown: 1.15, damage: 3, color: 0xffa444, width: 8, radius: 10 },
+      net: { range: w => Math.min(145, Math.max(100, w * .34)), cooldown: .92, damage: 1, color: 0x53d1ad, width: 6, radius: 8 },
+      spike: { range: w => Math.min(110, Math.max(78, w * .27)), cooldown: .25, damage: 1, color: 0xffdc60, width: 3, radius: 5 },
+      sonar: { range: w => Math.min(175, Math.max(125, w * .43)), cooldown: .82, damage: 2, color: 0x72fff0, width: 6, radius: 12 },
+      bloom: { range: w => Math.min(145, Math.max(105, w * .36)), cooldown: .34, damage: 1, color: 0xff74a8, width: 4, radius: 7 },
+      crabTank: { range: w => Math.min(180, Math.max(132, w * .44)), cooldown: 1.35, damage: 5, color: 0xff754e, width: 9, radius: 13 }, crabHeli: { range: w => Math.min(180, Math.max(130, w * .42)), cooldown: .7, damage: 2, color: 0xffa846, width: 6, radius: 8 }, crabJet: { range: w => Math.min(220, Math.max(160, w * .52)), cooldown: .58, damage: 3, color: 0xffa846, width: 6, radius: 9 }, crabCarrier: { range: w => Math.min(270, Math.max(190, w * .58)), cooldown: 1.05, damage: 4, color: 0xffb648, width: 7, radius: 11 }
+    };
+    function statsFor(tower, width) {
+      const base = towerSpecs[tower.type];
+      return {
+        ...base,
+        damage: base.damage + tower.upgrades.damage,
+        range: base.range(width) * (1 + tower.upgrades.range * .18),
+        cooldown: Math.max(.13, base.cooldown * (1 - tower.upgrades.fire * .16))
+      };
+    }
     function purchase(tower, stat, cash) {
       const path = paths[stat], level = tower.upgrades[stat];
       if (!path) return { ok: false, message: "Unknown upgrade!" };
@@ -39,6 +57,6 @@
       tower.upgrades[stat]++;
       return { ok: true, cash: cash - cost, tier: level + 1, path };
     }
-    return { paths, canUpgrade, itemsFor, purchase };
+    return { paths, canUpgrade, itemsFor, purchase, statsFor };
   };
 })();

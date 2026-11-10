@@ -6,11 +6,13 @@
   "primaryFiles": [
     "index.html",
     "styles.css",
-    "logic.js"
+    "logic.js",
+    "levels.js"
   ],
   "fileRoles": {
     "assets/manifest.json": "asset-manifest",
     "index.html": "entry",
+    "levels.js": "script",
     "logic.js": "game-logic",
     "project.manifest.json": "config",
     "runtime/asset-library.js": "runtime-kit-asset-library",
@@ -23,6 +25,7 @@
   "loadStrategy": {
     "assets/manifest.json": "on_demand",
     "index.html": "always",
+    "levels.js": "primary",
     "logic.js": "primary",
     "project.manifest.json": "editor_only",
     "runtime/asset-library.js": "on_demand",
@@ -36,17 +39,18 @@
     "index.html": 1,
     "styles.css": 2,
     "logic.js": 3,
-    "assets/manifest.json": 4,
-    "runtime/asset-library.js": 5,
-    "runtime/input.js": 6,
-    "runtime/pixi-assets.js": 7,
-    "runtime/pixi-core.js": 8,
-    "runtime/sounds.js": 9
+    "levels.js": 4,
+    "assets/manifest.json": 5,
+    "runtime/asset-library.js": 6,
+    "runtime/input.js": 7,
+    "runtime/pixi-assets.js": 8,
+    "runtime/pixi-core.js": 9,
+    "runtime/sounds.js": 10
   },
   "contentFiles": [],
   "assetManifestPath": "assets/manifest.json",
   "initContract": {
-    "bootPath": "logic.js",
+    "bootPath": "levels.js",
     "requiresImmediateBoot": true,
     "offlineOnly": true,
     "entryHtmlPath": "index.html"

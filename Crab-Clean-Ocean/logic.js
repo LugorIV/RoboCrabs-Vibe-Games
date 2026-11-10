@@ -10,12 +10,21 @@
     ctx.assets.background("sunny-reef", { fit: "cover" });
     const depthTint = new PIXI.Graphics();
     const shadow = new PIXI.Graphics();
-    const crab = ctx.assets.sprite("blue-crab", { size: 68 });
+    const crab = ctx.assets.char0979({ scale: 1 });
+    const crabBounds = crab.getLocalBounds();
+    const crabSize = Math.max(crabBounds.width, crabBounds.height) || 1;
+    crab.scale.set(68 / crabSize);
+    const CATFISH_SIZE = 360;
+    const catfish = ctx.assets.sprite("big-blue-catfish", { size: CATFISH_SIZE });
+    catfish.visible = false;
+    let catfishFit = 1;
     const keys = ["trash-bottle", "trash-bag", "trash-can", "trash-net"];
     const SUNNY_LEVELS = 5;
-    const LEVEL_COUNT = SUNNY_LEVELS + 1;
+    const LEVEL_COUNT = ReefLevelLayout.names.length;
+    const LEVEL_NAMES = ReefLevelLayout.names;
     const DEEP_REEF_ITEMS = 24;
-    const items = Array.from({ length: DEEP_REEF_ITEMS }, (_, i) => ({
+    const MAX_LEVEL_ITEMS = 36;
+    const items = Array.from({ length: MAX_LEVEL_ITEMS }, (_, i) => ({
       kind: i % keys.length,
       view: ctx.assets.sprite(keys[i % keys.length], { size: 45 }),
       x: 0, y: 0, active: false
@@ -24,15 +33,34 @@
     ctx.layers.world.addChild(depthTint);
     ctx.layers.world.addChild(shadow);
     items.forEach(item => ctx.layers.world.addChild(item.view));
-    ctx.layers.world.addChild(crab, bubbles);
+    ctx.layers.world.addChild(crab, bubbles, catfish);
 
     let width = ctx.size.width, height = ctx.size.height;
     let bounds = { left: 38, right: width - 38, top: 110, bottom: height - 120 };
     let x = width / 2, y = height / 2, score = 0, shells = 0, level = 1;
     let remaining = 0, total = 0, seconds = 70, playing = false;
     let elapsed = 0, movingLast = false, transition = 0, musicTrack = null;
+    let catfishPopup = 0;
+    const CATFISH_POPUP_SECONDS = 1.8;
     let previousDanger = 0;
-    let speedLevel = 0, reachLevel = 0, shopOpen = false, shopToolbar = null;
+    const boostLevels = { speed: 0, reach: 0, time: 0, shells: 0 };
+    let shopOpen = false;
+    let quizOpen = false, quizShownThisLevel = false, quizToolbar = null;
+    const quizQuestions = [
+      { question: "Where do blue crabs often live?", choices: ["Coastal bays", "Dry deserts", "Tree tops"], answer: 0, fact: "Blue crabs live in coastal bays and estuaries." },
+      { question: "How do blue crabs usually move?", choices: ["By flying", "Sideways", "By rolling"], answer: 1, fact: "Blue crabs can scuttle sideways." },
+      { question: "What protects a crab's body?", choices: ["Soft feathers", "A hard shell", "Thick fur"], answer: 1, fact: "A hard outer shell protects a blue crab." },
+      { question: "How does a crab grow bigger?", choices: ["Molt its shell", "Stretch its claws", "Grow a beak"], answer: 0, fact: "A blue crab molts, shedding its old shell to grow." },
+      { question: "What can blue crabs use claws for?", choices: ["Catch food", "Make bubbles", "Build nests"], answer: 0, fact: "Their claws help blue crabs catch and handle food." },
+      { question: "How can we help blue crabs?", choices: ["Keep water clean", "Leave litter", "Pour oil"], answer: 0, fact: "Clean water helps blue crabs and other ocean life." }
+    ];
+    const quizUi = ReefQuizLayout.createQuizUi(ctx, index => {
+      if (quizOpen && quizToolbar) quizToolbar.select("answer-" + index);
+    });
+    const quizLayer = quizUi.layer;
+    const quizCards = quizUi.cards;
+    ctx.layers.ui.addChild(quizLayer);
+
     const endOverlay = document.getElementById("game-over");
     const endMessage = document.getElementById("end-message");
     const endScore = document.getElementById("end-score");
@@ -46,15 +74,6 @@
       endOverlay.hidden = false;
     }
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-    const speedCosts = [30, 55, 80];
-    const reachCosts = [25, 50];
-
-    function drawDepthTint() {
-      const progress = (level - 1) / Math.max(1, LEVEL_COUNT - 1);
-      const darkness = 0.035 + progress * 0.38;
-      depthTint.clear().rect(0, 0, width, height)
-        .fill({ color: 0x00152c, alpha: darkness });
-    }
 
     function resize(size) {
       width = size.width;
@@ -63,62 +82,29 @@
       bounds = { left: 35, right: Math.max(36, width - 35), top: Math.min(115, height * 0.24), bottom: Math.max(180, height - bottomSpace) };
       x = clamp(x, bounds.left, bounds.right);
       y = clamp(y, bounds.top, bounds.bottom);
-      drawDepthTint();
+      catfishFit = Math.max(1, width * 1.3 / CATFISH_SIZE);
+      ReefLevelLayout.drawDepthTint(depthTint, width, height, level, LEVEL_COUNT);
       // All items use normalized layout on a resize, so even a narrow reef stays reachable.
-      layoutItems();
-    }
-
-    function layoutItems() {
-      const columns = width < 500 ? 3 : 4;
-      const rows = Math.ceil(total / columns);
-      const spanX = bounds.right - bounds.left;
-      const spanY = bounds.bottom - bounds.top;
-      items.forEach((item, i) => {
-        if (i >= total) return;
-        const col = i % columns, row = Math.floor(i / columns);
-        let fx = (col + 0.5) / columns;
-        let fy = (row + 0.5) / rows;
-        // Each reef has its own swim pattern: staggered shoals, waves, lanes, or zigzags.
-        switch ((level - 1) % LEVEL_COUNT) {
-          case 1:
-            if (row % 2 === 1) fx = 1 - fx;
-            break;
-          case 2:
-            fx += row % 2 === 0 ? 0.12 : -0.12;
-            break;
-          case 3:
-            fx += Math.sin(row * 1.7) * 0.11;
-            break;
-          case 4:
-            fy += col % 2 === 0 ? -0.09 : 0.09;
-            break;
-          case 5:
-            fx += Math.sin((row + col) * 1.3) * 0.13;
-            fy += Math.cos((row - col) * 1.1) * 0.06;
-            break;
-        }
-        fx = clamp(fx, 0.07, 0.93);
-        fy = clamp(fy, 0.08, 0.92);
-        item.x = bounds.left + spanX * fx;
-        item.y = bounds.top + spanY * fy;
-        // Keep the crab's starting spot clear on every layout.
-        if (Math.hypot(item.x - width / 2, item.y - (bounds.top + bounds.bottom) / 2) < 48) {
-          item.y = clamp(item.y + 55, bounds.top + 20, bounds.bottom - 12);
-        }
-        item.view.position.set(item.x, item.y);
-      });
+      ReefLevelLayout.layoutItems(items, total, level, width, bounds);
+      if (quizOpen) quizUi.layout(quizQuestions[(level - 1) % quizQuestions.length].choices, width, height);
     }
 
     function dangerLevel() {
       return Math.ceil(level / LEVEL_COUNT * 5);
     }
 
+    function boostStatus() {
+      return "Boosts: Swim " + boostLevels.speed + " | Reach " + boostLevels.reach +
+        " | Time " + boostLevels.time + " | Shells " + boostLevels.shells;
+    }
+
     function hud() {
       ctx.ui.hud.score(score);
       ctx.ui.hud.text("shells", "Shells: " + shells);
       ctx.ui.hud.bar("Ocean health", total - remaining, total);
-      const depthName = level > SUNNY_LEVELS ? "DEPTH: Deep Reef" : "DEPTH: Reef";
-      ctx.ui.hud.bar("Depth", level, LEVEL_COUNT, { label: depthName, color: "#1686bc" });
+      ctx.ui.hud.bar("Depth", level, LEVEL_COUNT, {
+        label: "REEF: " + LEVEL_NAMES[level - 1], color: "#1686bc"
+      });
       const danger = dangerLevel();
       const dangerColor = danger >= 4 ? "#ef4444" : danger >= 3 ? "#f59e0b" : "#22c55e";
       ctx.ui.hud.bar("Danger", danger, 5, {
@@ -128,26 +114,54 @@
       ctx.ui.hud.timer(Math.ceil(seconds));
     }
 
+    const boostShop = ReefBoostShop.create(ctx, {
+      levels: boostLevels,
+      getShells: () => shells,
+      isFinal: () => level === LEVEL_COUNT,
+      onContinue: finish,
+      onPurchase(id, cost) {
+        shells -= cost;
+        boostLevels[id]++;
+        const messages = {
+          speed: "Swim speed boost!",
+          reach: "Cleanup reach boost!",
+          time: "Extra time boost for the next reef!",
+          shells: "More shells for every cleanup!"
+        };
+        ctx.ui.banner(messages[id] + " Rank " + boostLevels[id] + "!", { seconds: 1.6 });
+        ctx.sfx.play("pickup.metal_clink_02", { volume: 0.55 });
+        ctx.ui.hud.text("shells", "Shells: " + shells);
+        ctx.ui.hud.text("shop", boostStatus());
+      }
+    });
+
     function startLevel() {
-      if (shopToolbar) {
-        shopToolbar.remove();
-        shopToolbar = null;
+      boostShop.remove();
+      if (quizToolbar) {
+        quizToolbar.remove();
+        quizToolbar = null;
       }
       shopOpen = false;
+      quizOpen = false;
+      quizShownThisLevel = false;
       ctx.ui.hud.text("shop", null);
+      ctx.ui.hud.text("quiz", null);
+      quizCards.forEach(card => { card.view.visible = false; });
       const deepReef = level > SUNNY_LEVELS;
-      total = deepReef ? DEEP_REEF_ITEMS : 3 + level * 3;
+      total = level <= SUNNY_LEVELS
+        ? 3 + level * 3
+        : DEEP_REEF_ITEMS + (level - SUNNY_LEVELS - 1) * 3;
       remaining = total;
-      // Start with 40 seconds and remove 5 seconds on each later level.
-      seconds = 40 - (level - 1) * 5;
+      // Later reefs add cleanup targets while keeping enough time to explore.
+      seconds = Math.min(70, Math.max(22, 40 - (level - 1) * 2) + boostLevels.time * 6);
       x = width / 2;
       y = (bounds.top + bounds.bottom) / 2;
       items.forEach((item, i) => {
         item.active = i < total;
         item.view.visible = item.active;
       });
-      layoutItems();
-      drawDepthTint();
+      ReefLevelLayout.layoutItems(items, total, level, width, bounds);
+      ReefLevelLayout.drawDepthTint(depthTint, width, height, level, LEVEL_COUNT);
       hud();
       const danger = dangerLevel();
       if (danger >= 4 && danger > previousDanger) {
@@ -160,12 +174,7 @@
         ctx.music.play(nextTrack, { fade: 1 });
         musicTrack = nextTrack;
       }
-      const depthNames = ["Sunlit Reef", "Blue Reef", "Twilight Reef", "Dusky Reef", "Dark Reef", "Deep Reef"];
-      if (deepReef) {
-        ctx.ui.banner("Deep Reef — hardest level! Collect 24!");
-      } else {
-        ctx.ui.banner(depthNames[level - 1] + " — Level " + level + "/" + LEVEL_COUNT);
-      }
+      ctx.ui.banner(LEVEL_NAMES[level - 1] + " — Level " + level + "/" + LEVEL_COUNT + "! Collect " + total + "!");
       if (level > 1) ctx.sfx.play("water.splash_06", { volume: 0.55 });
     }
 
@@ -174,10 +183,16 @@
       level = 1;
       score = 0;
       shells = 0;
-      speedLevel = 0;
-      reachLevel = 0;
+      boostLevels.speed = 0;
+      boostLevels.reach = 0;
+      boostLevels.time = 0;
+      boostLevels.shells = 0;
       shopOpen = false;
       transition = 0;
+      catfishPopup = 0;
+      catfish.visible = false;
+      catfish.scale.set(catfishFit);
+      catfish.rotation = 0;
       musicTrack = null;
       previousDanger = 0;
       playing = true;
@@ -190,7 +205,7 @@
       item.view.visible = false;
       remaining--;
       score += 10;
-      shells += 10;
+      shells += 10 + boostLevels.shells * 5;
       hud();
       ctx.ui.popup("+10", item.x, item.y);
       ctx.fx.burst(item.x, item.y);
@@ -200,6 +215,54 @@
         transition = 1.4;
         ctx.fx.flash();
         ctx.ui.banner("100% healthy! Reef restored!");
+      } else if (!quizShownThisLevel && total - remaining >= Math.ceil(total / 2)) {
+        openQuiz();
+      }
+    }
+
+    function openQuiz() {
+      if (quizShownThisLevel || remaining === 0) return;
+      quizShownThisLevel = true;
+      quizOpen = true;
+      playing = false;
+      const question = quizQuestions[(level - 1) % quizQuestions.length];
+      ctx.ui.hud.text("quiz", "Blue crab quiz: " + question.question);
+      quizUi.layout(question.choices, width, height);
+      quizToolbar = ctx.ui.toolbar(question.choices.map((choice, index) => ({
+        id: "answer-" + index,
+        label: choice,
+        icon: "🦀"
+      })), { onSelect: answerQuiz });
+      quizToolbar.hide();
+      ctx.ui.banner("Blue crab quiz! Choose an answer.", { seconds: 2.5 });
+    }
+
+    function answerQuiz(id) {
+      if (!quizOpen) return;
+      const question = quizQuestions[(level - 1) % quizQuestions.length];
+      const choice = Number(id.slice("answer-".length));
+      quizOpen = false;
+      quizLayer.visible = false;
+      quizCards.forEach(card => { card.view.visible = false; });
+      if (quizToolbar) {
+        quizToolbar.remove();
+        quizToolbar = null;
+      }
+      ctx.ui.hud.text("quiz", null);
+      if (choice === question.answer) {
+        score += 20;
+        shells += 20 + boostLevels.shells * 10;
+        hud();
+        ctx.ui.banner("Correct! " + question.fact, { seconds: 2.5 });
+        ctx.sfx.play("pickup.metal_clink_02", { volume: 0.6 });
+        playing = true;
+      } else {
+        ctx.ui.banner("Wrong answer! A huge sharp-toothed catfish lunges out!", { seconds: 2.5 });
+        ctx.fx.shake(0.55); ctx.fx.flash();
+        ctx.sfx.play("water.splash_10", { volume: 0.7 });
+        catfishPopup = CATFISH_POPUP_SECONDS;
+        catfish.visible = true;
+        playing = false;
       }
     }
 
@@ -208,66 +271,21 @@
       playing = false;
       shopOpen = true;
       ctx.ui.hud.timer(null);
-      ctx.ui.hud.text("shop", "Shop: Speed " + speedLevel + "/3, cleanup " + reachLevel + "/2");
-      ctx.ui.banner("Reef cleared! Spend shells on upgrades, then continue.", { seconds: 4 });
-      shopToolbar = ctx.ui.toolbar([
-        { id: "speed", label: "Swim faster", icon: "⚡", cost: speedCosts[speedLevel] + " shells" },
-        { id: "reach", label: "Cleanup reach", icon: "🫧", cost: reachCosts[reachLevel] + " shells" },
-        { id: "continue", label: level === LEVEL_COUNT ? "Finish reef" : "Next reef", icon: "🌊" }
-      ], { onSelect: chooseShopItem, selected: "continue" });
-      updateShopButtons();
-    }
-
-    function updateShopButtons() {
-      if (!shopToolbar) return;
-      const speedCost = speedCosts[speedLevel];
-      const reachCost = reachCosts[reachLevel];
-      shopToolbar.setCost("speed", speedCost == null ? "MAX" : speedCost + " shells");
-      shopToolbar.setCost("reach", reachCost == null ? "MAX" : reachCost + " shells");
-      shopToolbar.setDisabled("speed", speedCost == null || shells < speedCost);
-      shopToolbar.setDisabled("reach", reachCost == null || shells < reachCost);
-    }
-
-    function chooseShopItem(id) {
-      if (!shopOpen) return;
-      if (id === "continue") {
-        finish();
-        return;
-      }
-      if (id === "speed" && speedCosts[speedLevel] != null) {
-        const cost = speedCosts[speedLevel];
-        if (shells < cost) return;
-        shells -= cost;
-        speedLevel++;
-        ctx.ui.banner("Swim speed upgraded!", { seconds: 1.6 });
-      } else if (id === "reach" && reachCosts[reachLevel] != null) {
-        const cost = reachCosts[reachLevel];
-        if (shells < cost) return;
-        shells -= cost;
-        reachLevel++;
-        ctx.ui.banner("Cleanup reach upgraded!", { seconds: 1.6 });
-      } else {
-        return;
-      }
-      ctx.sfx.play("pickup.metal_clink_02", { volume: 0.55 });
-      ctx.ui.hud.text("shells", "Shells: " + shells);
-      ctx.ui.hud.text("shop", "Shop: Speed " + speedLevel + "/3, cleanup " + reachLevel + "/2");
-      updateShopButtons();
+      ctx.ui.hud.text("shop", boostStatus());
+      ctx.ui.banner("Reef cleared! Choose your boosts, then continue.", { seconds: 4 });
+      boostShop.open();
     }
 
     function finish() {
       if (!shopOpen) return;
       shopOpen = false;
-      if (shopToolbar) {
-        shopToolbar.remove();
-        shopToolbar = null;
-      }
+      boostShop.remove();
       ctx.ui.hud.text("shop", null);
       if (level === LEVEL_COUNT) {
         ctx.music.stop({ fade: 1 });
         ctx.sfx.play("jingle.fanfare_01");
         ctx.emit("win");
-        showEnd("All 6 reef challenges are clean!");
+        showEnd("All 10 reef challenges are clean!");
         ctx.ui.win({ score, stars: 3 });
       } else {
         level++;
@@ -278,6 +296,13 @@
 
     function update(dt) {
       elapsed += dt;
+      if (catfishPopup > 0) {
+        catfishPopup = Math.max(0, catfishPopup - dt);
+        if (catfishPopup === 0) {
+          catfish.visible = false;
+          playing = true;
+        }
+      }
       if (transition > 0) {
         transition -= dt;
         if (transition <= 0) openShop();
@@ -288,7 +313,7 @@
       const moving = dx !== 0 || dy !== 0;
       if (moving) {
         const length = Math.hypot(dx, dy);
-        const swimSpeed = 205 + speedLevel * 50;
+        const swimSpeed = 205 + boostLevels.speed * 22;
         x = clamp(x + dx / length * swimSpeed * dt, bounds.left, bounds.right);
         y = clamp(y + dy / length * swimSpeed * dt, bounds.top, bounds.bottom);
         if (dx !== 0) crab.scale.x = Math.abs(crab.scale.x) * (dx < 0 ? -1 : 1);
@@ -308,7 +333,10 @@
         return;
       }
       for (const item of items) {
-        if (item.active && Math.hypot(x - item.x, y - item.y) < 37 + reachLevel * 12) collect(item);
+        if (item.active && Math.hypot(x - item.x, y - item.y) < 37 + boostLevels.reach * 7) {
+          collect(item);
+          if (!playing) break;
+        }
       }
     }
 
@@ -326,10 +354,20 @@
       items.forEach((item, i) => {
         if (item.active) item.view.y = item.y + Math.sin(elapsed * 2.5 + i) * 3;
       });
+      if (catfishPopup > 0) {
+        const popIn = Math.min(1, (CATFISH_POPUP_SECONDS - catfishPopup) / 0.22);
+        const easedPop = 1 - Math.pow(1 - popIn, 3);
+        catfish.visible = true;
+        catfish.position.set(width * 0.45, height * 0.48 + Math.sin(elapsed * 7) * 4);
+        catfish.scale.set(catfishFit * easedPop * (1 + Math.sin(Math.PI * popIn) * 0.24));
+        catfish.rotation = Math.sin(elapsed * 6) * 0.008;
+      } else {
+        catfish.visible = false;
+      }
     }
 
     resize(ctx.size);
-    ctx.ui.title({ title: "Blue Crab Reef Rescue", subtitle: "Collect ocean trash as you dive through six reefs. Every level gets darker and harder!" })
+    ctx.ui.title({ title: "Blue Crab Reef Rescue", subtitle: "Trash in the ocean can hurt or kill blue crabs. Don't litter—help keep their ocean clean as you collect trash!" })
       .then(() => reset());
     return { update, render, reset, onResize: resize };
   } });
