@@ -8,7 +8,7 @@ Games made by FLL Team: RoboCrabs #56774 on [DIY.org](https://diy.org) for our S
 
 | Path | What it is |
 | --- | --- |
-| `Crab-Escape-Run/`, `Crab-vs-Catfish-Defense/`, … | The games, exactly as downloaded from DIY.org. Don't edit them by hand. |
+| `Crab-Catfish-Subway-Run/`, `Crab-vs-Catfish-Defense/`, … | The games, exactly as downloaded from DIY.org. Don't edit them by hand. |
 | `site/` | The menu page, the list of games (`games.json`) and the graphics engines. |
 | `tools/build-site.mjs` | Builds the website from the two above. |
 | `.github/workflows/pages.yml` | Publishes the website to GitHub Pages on every push to `main`. |

@@ -5,7 +5,7 @@ to be re-applied by hand.
 
 ## Why it's safe to overwrite game folders
 
-The game folders (`Crab-Escape-Run/`, `Crab-vs-Catfish-Defense/`, …) are kept **exactly
+The game folders (`Crab-Catfish-Subway-Run/`, `Crab-vs-Catfish-Defense/`, …) are kept **exactly
 as DIY.org exports them**. None of our changes are in those folders.
 
 When something is pushed to `main`, a GitHub Action (`.github/workflows/pages.yml`)
@@ -25,7 +25,7 @@ to choose the right engine.
 
 1. Download the game from DIY.org.
 2. Replace the whole folder in this repo with the new download. Keep the **same folder
-   name**, e.g. `Crab-Escape-Run`. It's fine to delete the old folder first.
+   name**, e.g. `Crab-Catfish-Subway-Run`. It's fine to delete the old folder first.
 3. Commit to `main`, or open a pull request. A pull request runs the build to check
    the games (a red ✗ means something is wrong). Merging it publishes the site in
    about a minute (watch the **Actions** tab on GitHub).
@@ -50,7 +50,7 @@ Edit `site/games.json`:
 ## Cover pictures
 
 Put a picture named after the game folder in `site/covers/`, e.g.
-`site/covers/Crab-Escape-Run.jpg` (`.jpg`, `.png` or `.webp`). It's used automatically
+`site/covers/Crab-Catfish-Subway-Run.jpg` (`.jpg`, `.png` or `.webp`). It's used automatically
 as that game's picture on the menu; without one, the card shows the game's emoji.
 Pictures are shown in a wide 16:9 frame and trimmed to fit, so keep the important
 part in the middle.
