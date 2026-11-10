@@ -24,47 +24,89 @@
       ctx.layers.world.addChild(view);
       return view;
     });
+    const shieldViews = Array.from({ length: 16 }, () => {
+      const view = ctx.assets.sprite("catfish-force-shield", { size: 68 });
+      view.visible = false;
+      ctx.layers.world.addChild(view);
+      return view;
+    });
     const bursts = [];
     let lastWave = -1;
+    let shieldWaveAnnounced = -1;
 
-    function spawn(wave, baseSpeed, fish, start) {
-      if (wave % 5 !== 0 || wave === lastWave) return false;
-      // Later boss tiers replace the smaller boss on their special waves.
-      const kind = wave % 25 === 0 ? "bad" : wave % 15 === 0 ? "zomg" :
-        wave % 10 === 0 ? "bfb" : "moab";
-      const pools = { moab: moabViews, bfb: bfbViews, zomg: zomgViews, bad: badViews };
-      const pool = pools[kind];
-      const view = pool.find(candidate => !candidate.visible);
-      if (!view) return false;
-      lastWave = wave;
-      const stats = {
-        moab: { hp: 40 + wave * 5, speed: .53, armor: 1 },
-        bfb: { hp: 110 + wave * 7, speed: .43, armor: 2 },
-        zomg: { hp: 300 + wave * 12, speed: .35, armor: 3 },
-        bad: { hp: 620 + wave * 18, speed: .43, armor: 4 }
-      }[kind];
-      const enemy = {
-        view, progress: 0, hp: stats.hp, maxHp: stats.hp,
-        speed: baseSpeed * stats.speed, slowTimer: 0,
-        bossKind: kind, armor: stats.armor, wave
-      };
-      view.visible = true;
-      view.position.set(start.x, start.y);
-      view.rotation = 0;
-      fish.push(enemy);
-      const names = {
-        moab: "MOAB CATFISH! Break its armor!",
-        bfb: "BFB CATFISH! A giant armored fish is here!",
-        zomg: "ZOMG CATFISH! A colossal armored blimp is coming!",
-        bad: "BAD CATFISH! The mega boss is here!"
-      };
-      ctx.ui.banner(names[kind]);
-      ctx.fx.shake(kind === "bad" ? .35 : .18);
+    function spawn(wave, baseSpeed, fish, start, spawnIndex = 0, normalView = null, forceMoab = null, requestedKind = null) {
+      const forced = !requestedKind && !!(forceMoab && forceMoab.pending);
+      if (requestedKind || forced || (wave % 5 === 0 && wave !== lastWave)) {
+        // A missed quiz forces a MOAB; otherwise later boss tiers replace smaller bosses.
+        const kind = requestedKind || (forced ? "moab" : wave % 25 === 0 ? "bad" :
+          wave % 15 === 0 ? "zomg" : wave % 10 === 0 ? "bfb" : "moab");
+        const pools = { moab: moabViews, bfb: bfbViews, zomg: zomgViews, bad: badViews };
+        const pool = pools[kind];
+        const view = pool.find(candidate => !candidate.visible);
+        if (!view) return false;
+        if (!requestedKind) lastWave = wave;
+        const stats = {
+          moab: { hp: 40 + wave * 5, speed: .53, armor: 1 },
+          bfb: { hp: 110 + wave * 7, speed: .43, armor: 2 },
+          zomg: { hp: 300 + wave * 12, speed: .35, armor: 3 },
+          bad: { hp: 620 + wave * 18, speed: .43, armor: 4 }
+        }[kind];
+        const enemy = {
+          view, progress: 0, hp: stats.hp, maxHp: stats.hp,
+          speed: baseSpeed * stats.speed, slowTimer: 0,
+          bossKind: kind, armor: stats.armor, wave
+        };
+        view.visible = true;
+        view.tint = 0x62f5ff;
+        view.position.set(start.x, start.y);
+        view.rotation = 0;
+        fish.push(enemy);
+        if (forced) forceMoab.pending = false;
+        const names = {
+          moab: "MOAB CATFISH! Break its armor!",
+          bfb: "BFB CATFISH! A giant armored fish is here!",
+          zomg: "ZOMG CATFISH! A colossal armored blimp is coming!",
+          bad: "BAD CATFISH! The mega boss is here!"
+        };
+        ctx.ui.banner(names[kind]);
+        ctx.fx.shake(kind === "bad" ? .35 : .18);
+        return true;
+      }
+      if (wave % 4 !== 2 || spawnIndex % 5 !== 2 || !normalView) return false;
+      const shieldView = shieldViews.find(candidate => !candidate.visible);
+      if (!shieldView) return false;
+      const hp = Math.max(8, Math.round((2 + Math.floor(wave * 1.45)) * 1.8));
+      shieldView.visible = true;
+      shieldView.position.set(start.x, start.y);
+      shieldView.rotation = 0;
+      normalView.visible = true;
+      normalView.tint = 0xd6f7ff;
+      normalView.position.set(start.x, start.y);
+      fish.push({ view: normalView, progress: 0, hp, maxHp: hp,
+        speed: baseSpeed * .82, slowTimer: 0, shielded: true, shieldView });
+      if (shieldWaveAnnounced !== wave) {
+        shieldWaveAnnounced = wave;
+        ctx.ui.banner("Shielded catfish! Splash breaks shields; other hits are weaker!");
+      }
       return true;
     }
 
-    function damage(enemy, amount) {
-      enemy.hp -= enemy.bossKind ? Math.max(1, amount - enemy.armor) : amount;
+    function splashHit(x, y) {
+      bursts.push({ x, y, life: .48, maxLife: .48, radius: 46, color: 0x52e6ff, splash: true });
+    }
+
+    function damage(enemy, amount, splashDamage) {
+      if (enemy.bossKind) amount = Math.max(1, amount - enemy.armor);
+      if (enemy.shielded) {
+        if (splashDamage) {
+          enemy.shielded = false;
+          enemy.shieldView.visible = false;
+          splashHit(enemy.view.x, enemy.view.y);
+        } else {
+          amount = Math.max(.25, amount * .28);
+        }
+      }
+      enemy.hp -= amount;
     }
 
     function addNormalChildren(enemy, fish, fishViews) {
@@ -166,6 +208,17 @@
         const fade = burst.life / burst.maxLife;
         const progress = 1 - fade;
         const radius = burst.radius * (.28 + progress);
+        if (burst.splash) {
+          graphics.circle(burst.x, burst.y, radius).stroke({ color: burst.color, width: 7 * fade, alpha: fade });
+          graphics.circle(burst.x, burst.y, radius * .62).stroke({ color: 0xeaffff, width: 3 * fade, alpha: fade * .8 });
+          for (let drop = 0; drop < 6; drop++) {
+            const angle = drop * Math.PI / 3 + progress * .35;
+            const distance = radius * (1.05 + progress * .35);
+            graphics.circle(burst.x + Math.cos(angle) * distance, burst.y + Math.sin(angle) * distance,
+              3 + fade * 3).fill({ color: 0x8ef5ff, alpha: fade });
+          }
+          continue;
+        }
         graphics.circle(burst.x, burst.y, radius).stroke({
           color: burst.color, width: 7 * fade, alpha: fade
         });
@@ -185,6 +238,10 @@
     function drawHealthBars(fish, graphics) {
       graphics.clear();
       for (const enemy of fish) {
+        if (enemy.shielded && enemy.shieldView) {
+          enemy.shieldView.position.set(enemy.view.x, enemy.view.y);
+          enemy.shieldView.rotation = enemy.view.rotation;
+        }
         const boss = enemy.bossKind, x = enemy.view.x;
         const w = boss ? ({ moab: 56, bfb: 72, zomg: 88, bad: 100 }[boss] || 56) : 32;
         const lift = boss ? ({ moab: 46, bfb: 60, zomg: 66, bad: 74 }[boss] || 46) : 22;
@@ -201,11 +258,13 @@
 
     function reset() {
       lastWave = -1;
+      shieldWaveAnnounced = -1;
       bursts.length = 0;
-      moabViews.forEach(view => { view.visible = false; view.rotation = 0; });
-      bfbViews.forEach(view => { view.visible = false; view.rotation = 0; });
-      zomgViews.forEach(view => { view.visible = false; view.rotation = 0; });
-      badViews.forEach(view => { view.visible = false; view.rotation = 0; });
+      shieldViews.forEach(view => { view.visible = false; view.rotation = 0; });
+      moabViews.forEach(view => { view.visible = false; view.rotation = 0; view.tint = 0xffffff; });
+      bfbViews.forEach(view => { view.visible = false; view.rotation = 0; view.tint = 0xffffff; });
+      zomgViews.forEach(view => { view.visible = false; view.rotation = 0; view.tint = 0xffffff; });
+      badViews.forEach(view => { view.visible = false; view.rotation = 0; view.tint = 0xffffff; });
     }
 
     return { spawn, damage, pop, drawEffects, drawHealthBars, reset };

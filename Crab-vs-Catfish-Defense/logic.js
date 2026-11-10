@@ -4,10 +4,10 @@
     ctx.input.setControls({ controls: [] });
     ctx.assets.background("sunny-lagoon", { fit: "cover" });
     const board = new PIXI.Graphics();
+    const rangeArt = new PIXI.Graphics();
     const effects = new PIXI.Graphics();
     ctx.layers.world.addChild(board);
-    const padCoords = [[.12,.12],[.37,.13],[.53,.25],[.13,.48],[.43,.68],[.59,.69],[.83,.39],[.85,.89]];
-    const pads = padCoords.map(() => ({ x: 0, y: 0, tower: null }));
+    ctx.layers.world.addChild(rangeArt);
     const fish = [];
     const towers = [];
     const bolts = [];
@@ -17,10 +17,12 @@
       net: "reef-net-coral-3d",
       spike: "reef-puffer-spike-3d",
       sonar: "reef-sonar-shell-3d",
-      bloom: "reef-kelp-bloom-3d"
+      bloom: "reef-kelp-bloom-3d", crabTank: "crab-tank-tower", crabHeli: "crab-helicopter-tower", crabJet: "crab-fighter-jet", crabCarrier: "crab-aircraft-carrier-tower"
     };
     const fishArt = ["blue-catfish", "gold-catfish", "violet-catfish"];
+    const enemyTint = [0x7df9ff, 0xffe56b, 0xd8a7ff];
     const worlds = window.createReefWorlds(ctx);
+    const boardArt = window.createReefBoardArt(ctx, worlds, board, rangeArt);
     const fishViews = Array.from({ length: 72 }, (_, i) => {
       const view = ctx.assets.sprite(fishArt[i % fishArt.length], { size: 52 });
       view.visible = false;
@@ -29,31 +31,35 @@
       return view;
     });
     const bosses = window.createCatfishBosses(ctx, fishViews);
-    const towerViews = pads.map(() => {
+    const fishSpawner = window.createReefCatfishSpawners(ctx, fishViews, fishArt, enemyTint, bosses);
+    const towerViews = Array.from({ length: 64 }, () => {
       const views = {};
       for (const [type, key] of Object.entries(towerArt)) {
-        const view = ctx.assets.sprite(key, { size: 62 });
+        const view = ctx.assets.sprite(key, { size: type === "crabJet" ? 82 : type === "crabCarrier" ? 100 : 62 });
         view.visible = false;
         ctx.layers.world.addChild(view);
         views[type] = view;
       }
       return views;
     });
-    const upgradeArt = new PIXI.Graphics();
-    ctx.layers.world.addChild(upgradeArt);
+    const carrierMeter = window.createCrabCarrierMeter(ctx);
+    const heliShots = window.createCrabHelicopterShots(ctx), carrierFlights = window.createCrabCarrierFlights(ctx);
+    const upgradeArt = boardArt.upgradeArt;
+    boardArt.attachUpgradeArt();
     const healthArt = new PIXI.Graphics();
     ctx.layers.world.addChild(healthArt);
     ctx.layers.world.addChild(effects);
-    let W = 360, H = 640, top = 110, height = 400, points = [], lengths = [], routeLength = 1;
-    let shells = 100, lives = 5, wave = 0, waveSize = 0, leftToSpawn = 0, spawnClock = 0, autoWaveTimer = 0;
-    let running = false, active = false, ended = false, time = 0, kills = 0;
-    const endOverlay = document.getElementById("game-over");
-
+    let W = 360, H = 640, top = 110, height = 400, points = [], lengths = [], routeLength = 1, boardWidth = 360;
+    let shells = 100, lives = 100, wave = 0, waveSize = 0, leftToSpawn = 0, spawnClock = 0, waveSpawnRate = 1, moabPenalty = { pending: false };
+    let running = false, active = false, ended = false, kills = 0;
+    let bossMusicActive = false;
+    let waveButton = null, quiz = null, quizBeforeGameOver = false, freePlayMode = null;
+    const endOverlay = document.getElementById("game-over"), crabFacts = window.createCrabFactDisplay(ctx), crabBadge = window.createCrabBadgeBoost(ctx);
     function layout(size) {
-      W = size.width; H = size.height;
+      W = size.width; H = size.height; boardWidth = freePlayMode && freePlayMode.active ? freePlayMode.sidebar.playWidth(size) : W;
       top = Math.max(94, H * .16);
       height = Math.max(200, H - top - 105);
-      const at = (x, y) => ({ x: x * W, y: top + y * height });
+      const at = (x, y) => ({ x: x * boardWidth, y: top + y * height });
       points = worlds.route(at);
       routeLength = 0;
       lengths = [];
@@ -61,53 +67,15 @@
         const n = Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
         lengths.push(n); routeLength += n;
       }
-      pads.forEach((p, i) => {
-        const pos = at(...padCoords[i]);
-        p.x = pos.x; p.y = pos.y;
-        Object.values(towerViews[i]).forEach(view => view.position.set(p.x, p.y));
+      towers.forEach(tower => {
+        tower.x = tower.nx * boardWidth;
+        tower.y = top + tower.ny * height;
+        towerViews[tower.slot][tower.type].position.set(tower.x, tower.y);
       });
       drawBoard();
-    }
-    function drawBoard() {
-      board.clear();
-      worlds.drawBackground(board, W, H, points);
-      for (let i = 0; i < 18; i++) {
-        const x = ((i * 97 + 31) % 997) / 997 * W;
-        const y = top * .25 + ((i * 173 + 47) % 991) / 991 * (H - top * .35);
-        board.circle(x, y, 2 + (i % 3)).fill({ color: 0xe7ffdc, alpha: .42 });
-        board.circle(x - 3, y - 4, 1.2).fill({ color: 0xffffff, alpha: .72 });
-      }
-      worlds.drawRoute(board, points);
-      pads.forEach((p, index) => {
-        // Layered oval bevels read like little raised reef platforms from above.
-        board.ellipse(p.x, p.y + 11, 31, 23).fill({ color: 0x123f59, alpha: .34 });
-        board.ellipse(p.x, p.y + 6, 30, 23).fill(0x176478);
-        board.ellipse(p.x, p.y + 3, 29, 22).fill(0xf04f3f);
-        board.ellipse(p.x, p.y, 26, 20).fill(0xffd34e);
-        board.ellipse(p.x, p.y - 3, 23, 17).fill(0xffefad);
-        board.ellipse(p.x, p.y - 2, 20, 14).fill({ color: 0x278b9a, alpha: .88 });
-        board.ellipse(p.x, p.y - 2, 20, 14).stroke({ color: p.tower ? 0x183b6b : 0xc6fff0, width: 2, alpha: .95 });
-        board.ellipse(p.x - 7, p.y - 10, 8, 2.5).fill({ color: 0xffffff, alpha: .68 });
-        for (let dot = 0; dot < 4; dot++) {
-          const a = dot * Math.PI / 2 + index * .3;
-          board.circle(p.x + Math.cos(a) * 25, p.y + Math.sin(a) * 18, 2.2).fill(0xffffff);
-        }
-      });
-      upgradeArt.clear();
-      const upgradeColors = { damage: 0xff7851, range: 0x438ff2, fire: 0xffd34f };
-      pads.forEach(p => {
-        if (!p.tower) return;
-        ["damage", "range", "fire"].forEach((stat, path) => {
-          for (let tier = 0; tier < 5; tier++) {
-            const x = p.x - 14 + tier * 7;
-            const y = p.y + 24 + path * 5;
-            upgradeArt.circle(x, y, 1.8).fill({
-              color: tier < p.tower.upgrades[stat] ? upgradeColors[stat] : 0x456879,
-              alpha: tier < p.tower.upgrades[stat] ? 1 : .78
-            });
-          }
-        });
-      });
+      drawSelectedRange();
+      carrierMeter.update(towers);
+      crabFacts.layout(size); if (quiz) quiz.layout(size); crabBadge.layout(size); if (freePlayMode) freePlayMode.sidebar.layout(size, freePlayMode.active, top + 52);
     }
     function route(t) {
       let distance = Math.max(0, Math.min(1, t)) * routeLength;
@@ -123,51 +91,72 @@
     }
     function hud() {
       ctx.ui.hud.score(shells);
-      ctx.ui.hud.lives(lives, 5);
+      ctx.ui.hud.lives(lives, 100);
       ctx.ui.hud.bar("Wave " + Math.max(1, wave), wave ? waveSize - leftToSpawn - fish.length : 0, waveSize || 4);
     }
+    function syncBossMusic() {
+      bossMusicActive = window.syncReefBossMusic(ctx, fish, wave, quiz, bossMusicActive);
+    }
+    function updateWaveButton() {
+      if (waveButton) {
+        waveButton.disabled = !active || running || ended || (quiz && quiz.active);
+        waveButton.hidden = !!(freePlayMode && freePlayMode.active);
+      }
+    }
     function startWave() {
-      if (!active || running || ended) return;
+      if (!active || running || ended || (quiz && quiz.active)) return;
       wave++;
+      moabPenalty.pending = quiz.takeWavePenalty();
+      waveSpawnRate = moabPenalty.pending ? 1.15 : 1;
+      crabBadge.beginWave();
+      carrierMeter.beginWave(towers, wave);
       waveSize = 4 + Math.min(36, wave * 2);
       leftToSpawn = waveSize;
-      spawnClock = .1;
-      running = true;
+      spawnClock = .1 / waveSpawnRate;
+      running = true; crabFacts.hide(); updateWaveButton();
       ctx.sfx.play("water.bubble_01");
       hud();
     }
+    waveButton = ctx.ui.button("Start Wave", startWave, { at: "top-left" });
+    updateWaveButton();
     let selectedTower = "bubble";
     let focusedTower = null;
     const buildTools = [
       { id: "bubble", label: "Bubble", icon: "🫧", cost: 50 },
+      { id: "crabCarrier", label: "Crab Aircraft Carrier", icon: "🛳️", cost: 300 },
       { id: "cannon", label: "Cannon", icon: "💥", cost: 75 },
       { id: "net", label: "Net", icon: "🕸️", cost: 65 },
       { id: "spike", label: "Spikes", icon: "⭐", cost: 45 },
       { id: "sonar", label: "Sonar", icon: "🐚", cost: 85 },
-      { id: "bloom", label: "Kelp bloom", icon: "🌺", cost: 60 },
-      { id: "wave", label: "Start wave", icon: "🌊" },
+      { id: "bloom", label: "Kelp bloom", icon: "🌺", cost: 60 }, { id: "crabTank", label: "Crab tank", icon: "🦀", cost: 90 }, { id: "crabHeli", label: "Crab heli", icon: "🚁", cost: 90 }, { id: "crabJet", label: "Crab jet", icon: "✈️", cost: 90 },
       { id: "worlds", label: "Worlds", icon: "🌍" }
     ];
     let toolbar;
     function showBuildTools() {
       focusedTower = null;
-      toolbar.setItems(buildTools);
+      drawSelectedRange();
+      toolbar.setItems(freePlayMode ? freePlayMode.items() : buildTools);
       toolbar.select(selectedTower);
     }
     const upgradeRules = window.createReefUpgradeRules();
+    function drawSelectedRange() {
+      boardArt.drawSelectedRange(focusedTower, towers, W, upgradeRules);
+    }
+    const drawBoard = () => boardArt.drawBoard(W, H, top, points, towers);
     function showUpgradeTools(tower) {
       focusedTower = tower;
+      drawSelectedRange();
       toolbar.setItems(upgradeRules.itemsFor(tower));
     }
     function upgradeFocused(id) {
       if (!focusedTower) return;
       const result = upgradeRules.purchase(focusedTower, id.slice("upgrade-".length), shells);
-      const p = pads[focusedTower.pad];
+      const p = focusedTower;
       if (!result.ok) {
         ctx.ui.popup(result.message, p.x, p.y);
         return;
       }
-      shells = result.cash;
+      if (!freePlayMode || !freePlayMode.active) shells = result.cash;
       ctx.sfx.play("ui.pluck_02");
       ctx.fx.burst(p.x, p.y);
       ctx.ui.popup(result.path.name + " tier " + result.tier + "!", p.x, p.y);
@@ -176,21 +165,22 @@
     }
     function sellFocusedTower() {
       if (!focusedTower) return;
-      const tower = focusedTower, p = pads[tower.pad];
+      const tower = focusedTower;
       const refund = Math.floor(tower.invested * .7);
       shells += refund;
-      p.tower = null;
       towers.splice(towers.indexOf(tower), 1);
-      towerViews[tower.pad][tower.type].visible = false;
+      towerViews[tower.slot][tower.type].visible = false;
       focusedTower = null;
       showBuildTools();
-      ctx.ui.popup("Sold for " + refund + " shells", p.x, p.y);
+      ctx.ui.popup("Sold for " + refund + " shells", tower.x, tower.y);
       drawBoard(); hud();
     }
     toolbar = ctx.ui.toolbar(buildTools, {
       selected: selectedTower,
       onSelect: id => {
-        if (id === "worlds") toolbar.setItems(worlds.choices);
+        if (quiz && quiz.active) { quiz.handle(id); updateWaveButton(); }
+        else if (freePlayMode && freePlayMode.handle(id)) toolbar.select(selectedTower);
+        else if (id === "worlds") toolbar.setItems(worlds.choices);
         else if (id.startsWith("world-")) {
           if (running) ctx.ui.banner("Finish this wave before changing worlds!");
           else {
@@ -200,54 +190,74 @@
           }
           showBuildTools();
         }
-        else if (id === "wave") startWave();
         else if (id === "back") showBuildTools();
         else if (id === "sell") sellFocusedTower();
         else if (id.startsWith("upgrade-")) upgradeFocused(id);
         else {
           selectedTower = id;
           focusedTower = null;
-          ctx.ui.banner(id + " tower selected. Place it on an empty pad.");
+          ctx.ui.banner(id === "crabCarrier" ? "Aircraft carrier selected! Place it off the path." : id + " tower selected. Place anywhere off the path!");
         }
       }
     });
-    function place(index) {
-      const p = pads[index];
-      const costs = { bubble: 50, cannon: 75, net: 65, spike: 45, sonar: 85, bloom: 60 };
+    freePlayMode = window.createReefFreePlayMode(ctx, buildTools, {
+      onEnable: () => { shells = Math.max(shells, 999999); updateWaveButton(); layout(ctx.size); showBuildTools(); hud(); },
+      spawn: kind => fishSpawner.chosen(kind, { wave, routeLength, fish, start: points[0] }),
+      onSend: () => { running = true; crabFacts.hide(); syncBossMusic(); }
+    });
+    quiz = window.createReefQuiz(ctx, items => items ? toolbar.setItems(items) : (showBuildTools(), quizBeforeGameOver && lives <= 0 && finish()), undefined, () => crabBadge.award());
+    function distanceToRoute(x, y) {
+      let nearest = Infinity;
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)));
+        nearest = Math.min(nearest, Math.hypot(x - a.x - t * dx, y - a.y - t * dy));
+      }
+      return nearest;
+    }
+    function place(x, y) {
+      const costs = { bubble: 50, cannon: 75, net: 65, spike: 45, sonar: 85, bloom: 60, crabTank: 90, crabHeli: 90, crabJet: 90, crabCarrier: 300 };
       const cost = costs[selectedTower];
-      if (p.tower || shells < cost) {
+      const tooClose = towers.some(tower => Math.hypot(tower.x - x, tower.y - y) < 58);
+      const margin = selectedTower === "crabCarrier" ? 52 : 34;
+      if (x < margin || x > boardWidth - margin || y < top + margin || y > top + height - margin || distanceToRoute(x, y) < 58 || tooClose) {
         ctx.sfx.play("impact.bonk_cartoon_synth_03");
-        ctx.ui.popup(p.tower ? "Occupied!" : "Need " + cost + " shells!", p.x, p.y);
+        ctx.ui.popup("Place off the path with room!", x, y);
         return;
       }
-      shells -= cost;
-      const tower = { pad: index, type: selectedTower, cooldown: .25, invested: cost,
+      if ((!freePlayMode || !freePlayMode.active) && shells < cost) {
+        ctx.sfx.play("impact.bonk_cartoon_synth_03");
+        ctx.ui.popup("Need " + cost + " shells!", x, y);
+        return;
+      }
+      const slot = towerViews.findIndex(views => !Object.values(views).some(view => view.visible));
+      if (slot < 0) {
+        ctx.ui.popup("No more room for towers!", x, y);
+        return;
+      }
+      if (!freePlayMode || !freePlayMode.active) shells -= cost;
+      const tower = { slot, x, y, nx: x / boardWidth, ny: (y - top) / height,
+        type: selectedTower, cooldown: .25, invested: cost, ...carrierMeter.newTower(selectedTower, wave),
         upgrades: { damage: 0, range: 0, fire: 0 } };
-      p.tower = tower;
       towers.push(tower);
-      towerViews[index][selectedTower].visible = true;
+      towerViews[slot][selectedTower].visible = true;
+      towerViews[slot][selectedTower].position.set(x, y);
       ctx.sfx.play("ui.pluck_02");
-      ctx.fx.burst(p.x, p.y);
+      ctx.fx.burst(x, y);
       drawBoard(); hud();
     }
     function spawn() {
-      const variant = wave % 5 === 0 ? 2 : wave % 3 === 0 ? 1 : 0;
-      const view = fishViews.find(v => !v.visible && fishArt[variant] === fishArt[v._fishKind || 0]) || fishViews.find(v => !v.visible);
-      if (!view) return false;
-      const maxHp = 2 + Math.floor(wave * 1.45) + variant * 2;
-      const speed = Math.min(210, 62 + wave * 5.5 + Math.sqrt(wave) * 7);
-      if (bosses.spawn(wave, speed / routeLength, fish, points[0])) return true;
-      const enemy = { view, progress: 0, hp: maxHp, maxHp, speed: speed / routeLength, slowTimer: 0 };
-      fish.push(enemy);
-      view.visible = true;
-      view.position.set(points[0].x, points[0].y);
-      return true;
+      return fishSpawner.normal({ wave, routeLength, fish, start: points[0],
+        index: waveSize - leftToSpawn, penalty: moabPenalty, onBoss: syncBossMusic });
     }
     function finish() {
-      ended = true; active = false; running = false;
+      ended = true; active = false; running = false; crabBadge.finishWave();
+      updateWaveButton();
       ctx.music.stop({ fade: 1 });
       ctx.sfx.play("jingle.lose_soft_synth_01");
       ctx.emit("lose");
+      if (freePlayMode) freePlayMode.button.hidden = true;
       const card = ctx.ui.gameOver({ score: kills });
       const screen = card && card.closest(".diy-screen");
       if (screen) endOverlay.appendChild(screen);
@@ -255,13 +265,12 @@
     }
     function removeFish(enemy, escaped) {
       if (ended) return;
-      enemy.view.visible = false;
+      enemy.view.visible = false; if (enemy.shieldView) enemy.shieldView.visible = false;
       fish.splice(fish.indexOf(enemy), 1);
       if (escaped) {
-        lives--;
-        ctx.sfx.play("creature.burble_02");
-        ctx.fx.shake(.22);
-        if (lives <= 0) finish();
+        const escapedDamage = enemy.bossKind ? 20 : enemy.kind === 2 ? 5 : enemy.kind === 1 ? 3 : 1;
+        lives = Math.max(0, lives - escapedDamage); ctx.sfx.play("creature.burble_02");
+        ctx.fx.shake(.22); quizBeforeGameOver = lives <= 0; quiz.show(); updateWaveButton();
       } else {
         bosses.pop(enemy, fish, fishViews);
         shells += 15;
@@ -270,36 +279,30 @@
         ctx.ui.popup("+15 shells", enemy.view.x, enemy.view.y);
         ctx.fx.burst(enemy.view.x, enemy.view.y);
       }
+      syncBossMusic();
       hud();
     }
     function update(dt) {
-      if (!active || ended) return;
-      time += dt;
+      if (!active || ended || (quiz && quiz.active)) return;
+      carrierMeter.update(towers);
+      heliShots.update(dt); carrierFlights.update(dt); crabFacts.update(dt);
       if (ctx.input.pointer.pressed) {
-        const { x, y } = ctx.input.pointer;
-        const index = pads.findIndex(p => Math.hypot(x - p.x, y - p.y) < 30);
-        if (index >= 0) {
-          if (pads[index].tower) {
-            showUpgradeTools(pads[index].tower);
-            ctx.ui.banner("Upgrade this tower: damage, range, or fire rate!");
-          } else {
-            showBuildTools();
-            place(index);
-          }
+        const { x, y } = ctx.input.pointer; if (freePlayMode && freePlayMode.sidebar.handlePointer(x, y)) return;
+        const tower = towers.find(item => Math.hypot(x - item.x, y - item.y) < (item.type === "crabCarrier" ? 54 : 36));
+        if (tower) {
+          showUpgradeTools(tower);
+          ctx.ui.banner("Upgrade this tower: damage, range, or fire rate!");
+        } else {
+          showBuildTools();
+          place(x, y);
         }
       }
-      if (!running) {
-        if (wave > 0) {
-          autoWaveTimer -= dt;
-          if (autoWaveTimer <= 0) startWave();
-        }
-        if (!running) return;
-      }
+      if (!running) return;
       if (leftToSpawn > 0) {
         spawnClock -= dt;
         if (spawnClock <= 0) {
           if (spawn()) leftToSpawn--;
-          spawnClock = Math.max(.34, 1.18 - Math.min(.72, wave * .035));
+          spawnClock = Math.max(.34, 1.18 - Math.min(.72, wave * .035)) / waveSpawnRate;
         }
       }
       for (const enemy of [...fish]) {
@@ -309,47 +312,40 @@
         const pos = route(enemy.progress);
         enemy.view.position.set(pos.x, pos.y);
         enemy.view.rotation = pos.angle;
-        if (enemy.progress >= 1) removeFish(enemy, true);
+        if (enemy.progress >= 1) {
+          removeFish(enemy, true);
+          if (quiz && quiz.active) return;
+        }
       }
       if (ended) return;
       for (const tower of towers) {
         tower.cooldown -= dt;
         if (tower.cooldown > 0) continue;
-        const p = pads[tower.pad];
-        const specs = {
-          bubble: { range: Math.min(140, Math.max(100, W * .32)), cooldown: .48, damage: 1, color: 0x63eaff, width: 4, radius: 6 },
-          cannon: { range: Math.min(170, Math.max(125, W * .42)), cooldown: 1.15, damage: 3, color: 0xffa444, width: 8, radius: 10 },
-          net: { range: Math.min(145, Math.max(100, W * .34)), cooldown: .92, damage: 1, color: 0x53d1ad, width: 6, radius: 8 },
-          spike: { range: Math.min(110, Math.max(78, W * .27)), cooldown: .25, damage: 1, color: 0xffdc60, width: 3, radius: 5 },
-          sonar: { range: Math.min(175, Math.max(125, W * .43)), cooldown: .82, damage: 2, color: 0x72fff0, width: 6, radius: 12 },
-          bloom: { range: Math.min(145, Math.max(105, W * .36)), cooldown: .34, damage: 1, color: 0xff74a8, width: 4, radius: 7 }
-        };
-        const baseSpec = specs[tower.type];
-        const spec = {
-          ...baseSpec,
-          damage: baseSpec.damage + tower.upgrades.damage,
-          range: baseSpec.range * (1 + tower.upgrades.range * .18),
-          cooldown: Math.max(.13, baseSpec.cooldown * (1 - tower.upgrades.fire * .16))
-        };
+        if (tower.type === "crabCarrier" && tower.carrierJets <= 0) continue;
+        const p = tower;
+        const spec = upgradeRules.statsFor(tower, W);
         let target = null, best = Infinity;
         for (const enemy of fish) {
           const d = Math.hypot(enemy.view.x - p.x, enemy.view.y - p.y);
           if (d < spec.range && d < best) { best = d; target = enemy; }
         }
         if (!target) continue;
+        if (tower.type === "crabJet") towerViews[tower.slot].crabJet.rotation = Math.atan2(target.view.y - p.y, target.view.x - p.x);
         tower.cooldown = spec.cooldown;
         const hitX = target.view.x, hitY = target.view.y;
-        bolts.push({ x: p.x, y: p.y, tx: hitX, ty: hitY, life: .17, ...spec });
+        if (tower.type === "crabHeli" || tower.type === "crabJet") heliShots.fire(p.x, p.y, hitX, hitY); else if (tower.type === "crabCarrier") carrierMeter.launch(tower, carrierFlights, p.x, p.y, hitX, hitY); else bolts.push({ x: p.x, y: p.y, tx: hitX, ty: hitY, life: .17, ...spec });
         if (tower.type === "net") target.slowTimer = 1.8;
-        const radius = tower.type === "cannon" ? 48 : tower.type === "sonar" ? 64 : 0;
+        const radius = tower.type === "crabTank" ? 76 : tower.type === "cannon" ? 48 : tower.type === "sonar" ? 64 : tower.type === "crabHeli" ? 38 : tower.type === "crabJet" ? 46 : tower.type === "crabCarrier" ? 86 : 0;
+        const splashRocket = tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier";
+        const splashDamage = splashRocket || radius > 0;
         const hits = fish.filter(enemy => enemy === target ||
           (radius && Math.hypot(enemy.view.x - hitX, enemy.view.y - hitY) < radius));
         for (const enemy of hits) {
           if (tower.type === "sonar") enemy.slowTimer = Math.max(enemy.slowTimer, 1.3);
-          bosses.damage(enemy, enemy === target ? spec.damage : 1);
+          bosses.damage(enemy, crabBadge.applyDamage(enemy === target ? spec.damage : 1), splashDamage);
           if (enemy.hp <= 0) removeFish(enemy, false);
         }
-        ctx.sfx.play(tower.type === "cannon" ? "impact.bonk_cartoon_synth_03" : "ui.bubble_pop_synth_02", { volume: .26 });
+        ctx.sfx.play(tower.type === "cannon" || tower.type === "crabTank" || tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier" ? "impact.bonk_cartoon_synth_03" : "ui.bubble_pop_synth_02", { volume: .26 });
       }
       for (let i = bolts.length - 1; i >= 0; i--) {
         bolts[i].life -= dt;
@@ -365,33 +361,39 @@
         if (b.radius > 9) effects.circle(b.tx, b.ty, b.radius * 2).stroke({ color: b.color, width: 2, alpha: alpha * .65 });
       }
       bosses.drawEffects(dt, effects);
-      if (leftToSpawn === 0 && fish.length === 0) {
-        running = false;
-        if (wave === 1) {
-          ctx.ui.banner("Crab fact: Crabs have 10 legs!");
-          autoWaveTimer = 4.5;
-        } else {
-          autoWaveTimer = 3.2;
-        }
+      if ((!freePlayMode || !freePlayMode.active) && leftToSpawn === 0 && fish.length === 0) {
+        running = false; waveSpawnRate = 1; crabBadge.finishWave();
+        updateWaveButton();
+        if (wave % 5 === 0) { quiz.show(); updateWaveButton(); } else crabFacts.show(wave);
       }
     }
     function reset() {
       endOverlay.hidden = true;
-      shells = 100; lives = 5; wave = 0; waveSize = 0; leftToSpawn = 0; spawnClock = 0; autoWaveTimer = 0;
-      running = false; ended = false; active = true; time = 0; kills = 0;
+      shells = 100; lives = 100; wave = 0; waveSize = 0; leftToSpawn = 0; spawnClock = 0; waveSpawnRate = 1; moabPenalty.pending = false; quizBeforeGameOver = false;
+      if (freePlayMode) freePlayMode.reset(); layout(ctx.size);
+      heliShots.reset(); carrierFlights.reset(); running = false; ended = false; active = true; kills = 0; crabFacts.hide(); quiz.hide(); crabBadge.reset();
+      updateWaveButton();
       fish.length = 0; towers.length = 0; bolts.length = 0;
-      fishViews.forEach(v => { v.visible = false; v.scale.x = 1; });
+      carrierMeter.update(towers);
+      focusedTower = null;
+      drawSelectedRange();
+      fishViews.forEach(v => { v.visible = false; v.scale.x = 1; v.tint = 0xffffff; });
       bosses.reset();
       towerViews.forEach(views => Object.values(views).forEach(v => { v.visible = false; }));
-      pads.forEach(p => { p.tower = null; });
       selectedTower = "bubble";
       showBuildTools();
       effects.clear(); healthArt.clear(); drawBoard(); hud();
-      ctx.music.play("music.be_chillin", { fade: 1 });
+      bossMusicActive = false;
+      ctx.music.play("music.short_theme_melon_it_rock_rhythm_4", { fade: 1 });
     }
     layout(ctx.size);
     hud();
-    ctx.ui.title({ title: "Crab Reef Defense", subtitle: "Fun fact: some crabs eat other crabs! Pick a world and build reef towers." }).then(() => reset());
+    const pauseButton = ctx.ui.button("Pause", () => ctx.ui.pause(), { at: "top-left" });
+    pauseButton.hidden = true;
+    ctx.ui.title({ title: "Crab Reef Defense", subtitle: "Fun fact: some crabs eat other crabs! Pick a world and build reef towers.", pause: false }).then(() => {
+      pauseButton.hidden = false;
+      reset();
+    });
     return { update, render() {}, reset, onResize: layout };
   }});
 })();
