@@ -2620,6 +2620,29 @@
     ]);
   }
 
+  // A low view that spins circles the middle of the area at one distance, so the middle
+  // stays on screen and turning doesn't pump the zoom.
+  function solveOrbitFit(box, basis, tx, ty, near) {
+    var centre = [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2];
+    var radius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+    var half = (box.max.y - box.min.y) / 2;
+    var distance = 0;
+    for (var i = 0; i < 24; i += 1) {
+      var angle = (i / 24) * Math.PI * 2;
+      [-half, half].forEach(function (y) {
+        var point = [Math.cos(angle) * radius, y, Math.sin(angle) * radius];
+        var depth = fitDot(point, basis.forward);
+        distance = Math.max(
+          distance,
+          2 * near - depth,
+          Math.abs(fitDot(point, basis.right)) / tx - depth,
+          Math.abs(fitDot(point, basis.up)) / ty - depth
+        );
+      });
+    }
+    return fitCombine([[centre, 1], [basis.forward, -distance]]);
+  }
+
   // Ground the frame's corners reach at the play area's floor, capped near the
   // play area so a view up to the horizon stays usable for spawn edges.
   function cameraFitVisible(fit, position, basis, halfWidth, halfHeight, perspective) {
@@ -2650,6 +2673,9 @@
     };
   }
 
+  // Boards stay fitted edge to edge; a view this low is looking at something, so it orbits.
+  var CAMERA_ORBIT_MIN_TILT = 45;
+
   function createCameraFit(THREE, camera, bounds, options, scene) {
     options = options || {};
     if (!camera || !camera.isCamera) throw new TypeError("ctx.fitCameraTo needs a THREE camera.");
@@ -2667,6 +2693,7 @@
       yaw: 0,
       zoom: 1,
       focus: null,
+      orbit: Boolean(options.spin) && numeric(options.tilt, 30) >= CAMERA_ORBIT_MIN_TILT,
       player: player,
       view: { bounds: box, up: new THREE.Vector3(up[0], 0, up[1]), visible: null }
     };
@@ -2692,7 +2719,11 @@
       halfWidth = halfHeight * aspect;
       camera.aspect = aspect;
       camera.zoom = 1;
-      position = solvePerspectiveFit(corners, basis, halfWidth * (1 - fit.margin), halfHeight * (1 - fit.margin), near);
+      var tx = halfWidth * (1 - fit.margin);
+      var ty = halfHeight * (1 - fit.margin);
+      position = fit.orbit
+        ? solveOrbitFit(cameraFitFramed(fit), basis, tx, ty, near)
+        : solvePerspectiveFit(corners, basis, tx, ty, near);
     } else {
       var lo = [Infinity, Infinity, Infinity];
       var hi = [-Infinity, -Infinity, -Infinity];
@@ -3341,16 +3372,19 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
 
   // Sky colours are as they should look on screen (sRGB); the kit converts them through
   // the preset's tone mapping, so a sky looks the same at any exposure or quality.
+  // Daylight is calibrated so a sunlit surface shows about the colour the game gave it: sun,
+  // hemisphere and sky add up to roughly 1x the material colour, shade stays clearly darker.
+  // Bloom thresholds sit above that, so only glow materials, highlights and the sun bloom.
   var PRESETS = {
     "sunny-day": {
       tone: "neutral", exposure: 1,
       sky: { top: 0x2f7fd8, horizon: 0xb9defb, bottom: 0x7d9cb8, curve: 0.5, clouds: 0.45,
         cloud: 0xffffff, cloudShade: 0xc3d1e4, sun: 0xfff3dc, sunSize: 1.4, glow: 0.5 },
-      sun: { color: 0xfff1d8, intensity: 3.1, elevation: 52, azimuth: 35, softness: 2.5, shadow: 0.8 },
-      hemi: { sky: 0xd6ebff, ground: 0x76825a, intensity: 1.6 },
-      env: 0.2,
+      sun: { color: 0xfff1d8, intensity: 2.6, elevation: 52, azimuth: 35, softness: 2.5, shadow: 0.8 },
+      hemi: { sky: 0xd6ebff, ground: 0x76825a, intensity: 1.1 },
+      env: 0.15,
       fog: { near: 1.3, far: 4.5 },
-      post: { bloom: [0.18, 0.4, 0.95], saturation: 1.05, contrast: 1.03 }
+      post: { bloom: [0.14, 0.4, 1.15], saturation: 1.04, contrast: 1.03 }
     },
     "golden-hour": {
       tone: "aces", exposure: 1.25,
@@ -3360,14 +3394,14 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       hemi: { sky: 0xffd2b0, ground: 0x5d4a5a, intensity: 1.3 },
       env: 0.25,
       fog: { near: 1.1, far: 4 },
-      post: { bloom: [0.3, 0.5, 0.85], saturation: 1.08, contrast: 1.05, tint: 0xfff0e0 }
+      post: { bloom: [0.24, 0.5, 1.15], saturation: 1.06, contrast: 1.05, tint: 0xfff0e0 }
     },
     overcast: {
-      tone: "neutral", exposure: 1.05,
+      tone: "neutral", exposure: 1,
       sky: { top: 0x8794a6, horizon: 0xc7ced6, bottom: 0x8a9096, curve: 0.8, clouds: 0.85,
         cloud: 0xd9dee4, cloudShade: 0x9aa3ae, sun: 0xf2f2f2, sunSize: -1, glow: 0.12 },
       sun: { color: 0xf0f2f5, intensity: 1.5, elevation: 60, azimuth: 30, softness: 6, shadow: 0.4 },
-      hemi: { sky: 0xe0e6ee, ground: 0x7c7f73, intensity: 2.1 },
+      hemi: { sky: 0xe0e6ee, ground: 0x7c7f73, intensity: 1.75 },
       env: 0.25,
       fog: { near: 0.9, far: 3.2 },
       post: { bloom: null, saturation: 0.92, contrast: 1.02 }
@@ -3380,7 +3414,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       hemi: { sky: 0x4a5f9a, ground: 0x1d2236, intensity: 1.7 },
       env: 0.3,
       fog: { density: 0.45 },
-      post: { bloom: [0.55, 0.5, 0.7], saturation: 0.95, contrast: 1.04 }
+      post: { bloom: [0.45, 0.5, 0.95], saturation: 0.95, contrast: 1.04 }
     },
     "spooky-fog": {
       tone: "aces", exposure: 1.2, dark: true,
@@ -3390,57 +3424,57 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       hemi: { sky: 0x8a9a88, ground: 0x2c302a, intensity: 1.6 },
       env: 0.25,
       fog: { density: 0.65 },
-      post: { bloom: [0.35, 0.5, 0.75], saturation: 0.75, contrast: 1.06, vignette: 0.35 }
+      post: { bloom: [0.3, 0.5, 0.95], saturation: 0.75, contrast: 1.06, vignette: 0.35 }
     },
     underwater: {
       tone: "neutral", exposure: 1,
       sky: { top: 0x7fe0f0, horizon: 0x1f7f9c, bottom: 0x0c2f4a, curve: 0.6, clouds: 0,
         cloud: 0xffffff, cloudShade: 0xffffff, sun: 0xc8fbff, sunSize: -1, glow: 0.6 },
-      sun: { color: 0xb8f4ff, intensity: 2.2, elevation: 65, azimuth: 20, softness: 4, shadow: 0.6 },
-      hemi: { sky: 0x7fdcea, ground: 0x123a4a, intensity: 2.3 },
+      sun: { color: 0xb8f4ff, intensity: 1.9, elevation: 65, azimuth: 20, softness: 4, shadow: 0.6 },
+      hemi: { sky: 0x7fdcea, ground: 0x123a4a, intensity: 1.9 },
       env: 0.25,
       fog: { density: 0.7 },
-      post: { bloom: [0.25, 0.6, 0.85], saturation: 0.95, contrast: 1.02, tint: 0xe6fbff }
+      post: { bloom: [0.2, 0.6, 1.1], saturation: 0.95, contrast: 1.02, tint: 0xe6fbff }
     },
     space: {
       tone: "aces", exposure: 1.1, dark: true,
       sky: { top: 0x0b0d22, horizon: 0x1a1640, bottom: 0x0b0d22, curve: 0.6, clouds: 0,
         cloud: 0xffffff, cloudShade: 0xffffff, sun: 0xffffff, sunSize: 1.2, glow: 0.5, stars: 1.6 },
-      sun: { color: 0xffffff, intensity: 3.6, elevation: 35, azimuth: 50, softness: 1, shadow: 0.8 },
+      sun: { color: 0xffffff, intensity: 3, elevation: 35, azimuth: 50, softness: 1, shadow: 0.8 },
       hemi: { sky: 0x4a4d8a, ground: 0x15142a, intensity: 1.6 },
       env: 0.2,
       fog: null,
-      post: { bloom: [0.5, 0.45, 0.7], saturation: 1.05, contrast: 1.06, vignette: 0.25 }
+      post: { bloom: [0.4, 0.45, 1.1], saturation: 1.05, contrast: 1.06, vignette: 0.25 }
     },
     snow: {
-      tone: "neutral", exposure: 1.1,
+      tone: "neutral", exposure: 1,
       sky: { top: 0x7aa7d6, horizon: 0xe4eef7, bottom: 0xdfe8f0, curve: 0.55, clouds: 0.35,
         cloud: 0xffffff, cloudShade: 0xc9d4e2, sun: 0xffffff, sunSize: 1.4, glow: 0.45 },
-      sun: { color: 0xfafcff, intensity: 2.8, elevation: 30, azimuth: 40, softness: 3, shadow: 0.7 },
-      hemi: { sky: 0xdcebff, ground: 0xe6eef6, intensity: 1.5 },
+      sun: { color: 0xfafcff, intensity: 2.7, elevation: 30, azimuth: 40, softness: 3, shadow: 0.7 },
+      hemi: { sky: 0xdcebff, ground: 0xe6eef6, intensity: 1.4 },
       env: 0.2,
       fog: { near: 0.8, far: 3 },
-      post: { bloom: [0.2, 0.4, 0.95], saturation: 0.96, contrast: 1.02, tint: 0xf2f8ff }
+      post: { bloom: [0.14, 0.4, 1.15], saturation: 0.96, contrast: 1.02, tint: 0xf2f8ff }
     },
     desert: {
-      tone: "aces", exposure: 1.15,
+      tone: "aces", exposure: 0.85,
       sky: { top: 0x3a7cc4, horizon: 0xf3dcb4, bottom: 0xc9a77a, curve: 0.45, clouds: 0.1,
         cloud: 0xffffff, cloudShade: 0xe8d6bd, sun: 0xfff2d0, sunSize: 1.5, glow: 0.8 },
-      sun: { color: 0xffe8c4, intensity: 3.5, elevation: 58, azimuth: 30, softness: 1.5, shadow: 0.85 },
-      hemi: { sky: 0xd8e6f2, ground: 0xc69e6e, intensity: 1.4 },
-      env: 0.2,
+      sun: { color: 0xffe8c4, intensity: 2.6, elevation: 58, azimuth: 30, softness: 1.5, shadow: 0.85 },
+      hemi: { sky: 0xd8e6f2, ground: 0xc69e6e, intensity: 1 },
+      env: 0.15,
       fog: { near: 1, far: 3.6, color: 0xeed9b8 },
-      post: { bloom: [0.2, 0.4, 0.9], saturation: 1.05, contrast: 1.04, tint: 0xfff4e6 }
+      post: { bloom: [0.16, 0.4, 1.15], saturation: 1.04, contrast: 1.04, tint: 0xfff4e6 }
     },
     "cozy-indoors": {
-      tone: "aces", exposure: 1.2,
+      tone: "aces", exposure: 1,
       sky: { top: 0x3b2a20, horizon: 0x8a5d3c, bottom: 0x2a1d16, curve: 0.8, clouds: 0,
         cloud: 0xffffff, cloudShade: 0xffffff, sun: 0xffd9a0, sunSize: -1, glow: 0.3 },
-      sun: { color: 0xffd8a8, intensity: 2.3, elevation: 42, azimuth: -45, softness: 4, shadow: 0.7 },
-      hemi: { sky: 0xffe2c0, ground: 0x6b4a36, intensity: 1.6 },
-      env: 0.3, room: true,
+      sun: { color: 0xffd8a8, intensity: 2, elevation: 42, azimuth: -45, softness: 4, shadow: 0.7 },
+      hemi: { sky: 0xffe2c0, ground: 0x6b4a36, intensity: 1.15 },
+      env: 0.28, room: true,
       fog: null,
-      post: { bloom: [0.35, 0.5, 0.8], saturation: 1.02, contrast: 1.03, tint: 0xfff0dc, vignette: 0.25 }
+      post: { bloom: [0.25, 0.5, 1.15], saturation: 1.02, contrast: 1.03, tint: 0xfff0dc, vignette: 0.25 }
     },
     "neon-city": {
       tone: "aces", exposure: 1.35, dark: true,
@@ -3450,37 +3484,37 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       hemi: { sky: 0x7a4ab8, ground: 0x24123a, intensity: 2.2 },
       env: 0.3,
       fog: { density: 0.35 },
-      post: { bloom: [0.85, 0.55, 0.6], saturation: 1.12, contrast: 1.05, vignette: 0.2 }
+      post: { bloom: [0.55, 0.55, 0.9], saturation: 1.08, contrast: 1.05, vignette: 0.2 }
     },
     toon: {
-      tone: "neutral", exposure: 1.05,
+      tone: "neutral", exposure: 1,
       sky: { top: 0x2f9be8, horizon: 0xbff0ff, bottom: 0x8cc4e0, curve: 0.45, clouds: 0.5,
         cloud: 0xffffff, cloudShade: 0xdbe9f7, sun: 0xfffbe8, sunSize: 1.8, glow: 0.4 },
-      sun: { color: 0xfff6e2, intensity: 3, elevation: 55, azimuth: 30, softness: 1, shadow: 0.55 },
-      hemi: { sky: 0xe2f4ff, ground: 0x8fa070, intensity: 1.7 },
+      sun: { color: 0xfff6e2, intensity: 2.6, elevation: 55, azimuth: 30, softness: 1, shadow: 0.55 },
+      hemi: { sky: 0xe2f4ff, ground: 0x8fa070, intensity: 1.15 },
       env: 0.12,
       fog: { near: 1.6, far: 5 },
-      post: { bloom: [0.15, 0.4, 0.95], saturation: 1.15, contrast: 1.02 }
+      post: { bloom: [0.12, 0.4, 1.15], saturation: 1.06, contrast: 1.02 }
     },
     blocky: {
       tone: "neutral", exposure: 1,
       sky: { top: 0x6f9fff, horizon: 0xbdd5ff, bottom: 0x9ab4e0, curve: 0.6, clouds: 0.38, blocky: true,
         cloud: 0xffffff, cloudShade: 0xffffff, sun: 0xfffbe0, sunSize: 2.2, glow: 0.3 },
-      sun: { color: 0xfffae6, intensity: 2.9, elevation: 55, azimuth: 30, softness: 1, shadow: 0.6 },
-      hemi: { sky: 0xdde8ff, ground: 0x7f8a60, intensity: 1.7 },
-      env: 0.15,
+      sun: { color: 0xfffae6, intensity: 2.55, elevation: 55, azimuth: 30, softness: 1, shadow: 0.6 },
+      hemi: { sky: 0xdde8ff, ground: 0x7f8a60, intensity: 1.15 },
+      env: 0.12,
       fog: { near: 1.2, far: 3.5 },
-      post: { bloom: null, saturation: 1.05, contrast: 1.02 }
+      post: { bloom: null, saturation: 1.04, contrast: 1.02 }
     },
     candy: {
-      tone: "neutral", exposure: 1.05,
+      tone: "neutral", exposure: 1,
       sky: { top: 0xb58cf0, horizon: 0xffd1ea, bottom: 0xe0b6d8, curve: 0.5, clouds: 0.5,
         cloud: 0xfff4fb, cloudShade: 0xf2b8dc, sun: 0xfff0f6, sunSize: 1.6, glow: 0.5 },
-      sun: { color: 0xfff0f4, intensity: 2.8, elevation: 50, azimuth: 35, softness: 3, shadow: 0.5 },
-      hemi: { sky: 0xffe0f2, ground: 0xb9e6d2, intensity: 1.7 },
-      env: 0.2,
+      sun: { color: 0xfff0f4, intensity: 2.5, elevation: 50, azimuth: 35, softness: 3, shadow: 0.5 },
+      hemi: { sky: 0xffe0f2, ground: 0xb9e6d2, intensity: 1.2 },
+      env: 0.15,
       fog: { near: 1.2, far: 4, color: 0xffd6ec },
-      post: { bloom: [0.25, 0.5, 0.9], saturation: 1.1, contrast: 1.02, tint: 0xfff4fa }
+      post: { bloom: [0.18, 0.5, 1.15], saturation: 1.06, contrast: 1.02, tint: 0xfff4fa }
     }
   };
 
@@ -3784,6 +3818,31 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     "}"
   ].join("\n");
 
+  // Sun discs and glossy highlights reach radiance 30+ in HDR: capped so bloom can't flare.
+  var MAX_RADIANCE = 3;
+  // RoomEnvironment's light panels are 17-100 bright: shiny paint mirrored them as solid white.
+  var ROOM_PANEL_MAX = 5;
+  var CLAMP_SHADER = {
+    name: "LookClampShader",
+    uniforms: { tDiffuse: { value: null }, limit: { value: MAX_RADIANCE } },
+    vertexShader: [
+      "varying vec2 vUv;",
+      "void main() {",
+      "  vUv = uv;",
+      "  gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+      "}"
+    ].join("\n"),
+    fragmentShader: [
+      "uniform sampler2D tDiffuse;",
+      "uniform float limit;",
+      "varying vec2 vUv;",
+      "void main() {",
+      "  vec4 texel = texture2D( tDiffuse, vUv );",
+      "  gl_FragColor = vec4( min( texel.rgb, vec3( limit ) ), texel.a );",
+      "}"
+    ].join("\n")
+  };
+
   // Colour grade on linear HDR before the tone mapping pass.
   var GRADE_SHADER = {
     name: "LookGradeShader",
@@ -3889,6 +3948,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       postWanted: false,
       renderPass: null,
       gradePass: null,
+      bloomPass: null,
       composerSize: "",
       sizeKey: "",
       time: { value: 0 },
@@ -4032,7 +4092,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
 
     function buildEnvironment(preset, tier) {
       disposeEnvironment();
-      state.reflections.value = clamp(0.9 / Math.max(preset.env, 0.05), 1, 6);
+      state.reflections.value = preset.room ? 1 : clamp(0.9 / Math.max(preset.env, 0.05), 1, 6);
       var horizon = preset.sky.horizon;
       if (!glReady() || typeof THREE.PMREMGenerator !== "function") {
         scene.background = new THREE.Color(horizon);
@@ -4051,6 +4111,11 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
         var lighting = background;
         if (preset.room && typeof THREE.RoomEnvironment === "function") {
           room = new THREE.RoomEnvironment();
+          room.traverse(function (node) {
+            if (node.isMesh && node.material.emissiveIntensity > ROOM_PANEL_MAX) {
+              node.material.emissiveIntensity = ROOM_PANEL_MAX;
+            }
+          });
           lighting = generator.fromScene(room, 0.04, 0.1, 100, { size: 256 });
         }
         state.env = { background: background, lighting: lighting };
@@ -4350,6 +4415,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       state.composer = null;
       state.renderPass = null;
       state.gradePass = null;
+      state.bloomPass = null;
       if (!composer) return;
       try {
         (composer.passes || []).forEach(function (pass) {
@@ -4385,9 +4451,11 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
         state.renderPass = new THREE.RenderPass(scene, ctx.camera);
         composer.addPass(state.renderPass);
         if (post.bloom && typeof THREE.UnrealBloomPass === "function") {
-          composer.addPass(new THREE.UnrealBloomPass(
+          if (typeof THREE.ShaderPass === "function") composer.addPass(new THREE.ShaderPass(CLAMP_SHADER));
+          state.bloomPass = new THREE.UnrealBloomPass(
             new THREE.Vector2(tmp.size.x, tmp.size.y), post.bloom[0], post.bloom[1], post.bloom[2]
-          ));
+          );
+          composer.addPass(state.bloomPass);
         }
         if (typeof THREE.ShaderPass === "function") {
           var grade = new THREE.ShaderPass(GRADE_SHADER);
@@ -4462,6 +4530,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
         scanScene(true);
       }
       if (config.outlines) scanScene(true);
+      if (state.atmosphere) state.atmosphere.tierChanged();
       report();
     }
 
@@ -4536,8 +4605,12 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
           setPixelRatio(TIERS[state.tier] || TIERS.medium);
         }
       }
+      if (state.atmosphere) state.atmosphere.frame(dt, camera);
       updateShadow(camera);
-      if (state.fog) updateFogDistance(playDistance(camera), false);
+      if (state.fog) {
+        if (state.atmosphere) state.atmosphere.fog(playDistance(camera));
+        else updateFogDistance(playDistance(camera), false);
+      }
       scanScene(false);
     }
 
@@ -4714,9 +4787,24 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       },
       tier: function () { return state.tier; },
       dispose: function () {
+        if (state.atmosphere) {
+          state.atmosphere.stop();
+          state.atmosphere = null;
+        }
         disposeComposer();
         disposeEnvironment();
       }
+    };
+
+    // Internals three-sky.js builds ctx.look's sky system on.
+    api._sky = {
+      state: state,
+      tiers: TIERS,
+      defaultLook: DEFAULT_LOOK,
+      glReady: glReady,
+      skyMaterial: skyMaterial,
+      applyLook: applyLook,
+      warn: function (key, error) { warnOnce(state, key, error); }
     };
 
     function optionsKey(options) {
@@ -4738,6 +4826,11 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
         return;
       }
       state.applied += 1;
+      // A look switch ends the live sky; the same look again (a restart) keeps it.
+      if (state.atmosphere && key !== state.id) {
+        state.atmosphere.stop();
+        state.atmosphere = null;
+      }
       var quality = String(options.quality || "auto").toLowerCase();
       state.gameQuality = validLevel(quality) ? quality : "auto";
       state.options = options;
@@ -4754,6 +4847,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       configureFog(preset);
       if (state.seen && typeof WeakSet === "function") state.seen = new WeakSet();
       applyTier();
+      if (state.atmosphere) state.atmosphere.reattach();
       hookUpdates();
       startProbe();
       api.id = key;
@@ -4782,6 +4876,1838 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     graphics.active = null;
     ctx.look = createLook(ctx);
   });
+})();
+
+/* Sky and atmosphere for ctx.look (DIYKit feature part, loaded after three-look.js).
+   ctx.look.time(hour) and ctx.look.cycle({ ... }) move the sun and moon and blend the sky,
+   light, shadows and fog with no hard cuts; ctx.look.weather(id) brings cloud, rain, storm,
+   snow, sand or mist; ctx.look.sky({ ... }) sets everything at once; ctx.look.skybox(id) shows a
+   real six-face library sky. A game that never calls these keeps ctx.look.apply exactly as it
+   was. Never throws into a game. */
+(function () {
+  "use strict";
+  if (typeof window === "undefined") return;
+  // The prompt only teaches this API when the game's kit contains this marker.
+  var ATMOSPHERE_VERSION = 1;
+  var kit = window.DIYKit = window.DIYKit || {
+    libraryBase: "https://cdn.diy.org/vibe-library/v1",
+    extensions: [],
+    extend: function (fn) { this.extensions.push(fn); }
+  };
+
+  var DEG = Math.PI / 180;
+  // The day runs 0..24; the table holds one row per half hour and wraps at midnight.
+  var TABLE_STEP = 0.5;
+  var TABLE_ROWS = 48;
+  var TIME_NAMES = {
+    midnight: 0, dawn: 6.1, sunrise: 6.2, morning: 9, noon: 12, afternoon: 15,
+    golden: 17.1, sunset: 18, dusk: 18.2, evening: 19.2, night: 22
+  };
+  var WEATHER_IDS = ["clear", "cloudy", "rain", "storm", "snow", "sandstorm", "mist"];
+  // Hour -> palette. Dawn and dusk share the "dusk" look; twilight sits between dusk and night.
+  var KEYS = [
+    [0, "night"], [4.6, "night"], [5.5, "twilight"], [6.4, "dusk"], [7.7, "day"],
+    [16.3, "day"], [17.6, "dusk"], [18.5, "twilight"], [19.6, "night"], [24, "night"]
+  ];
+  // Colour targets are on-screen sRGB; dark weathers keep the sky readable by staying off black.
+  var WEATHER = {
+    clear: { clouds: 0, grey: 0, sun: 1, hemi: 1, shadow: 1, fog: 1, fogMix: 0, dim: 0, wind: 0.25 },
+    cloudy: { clouds: 0.82, grey: 0.5, sun: 0.5, hemi: 1.25, shadow: 0.7, fog: 0.85, fogMix: 0.25, dim: 0,
+      wind: 0.5, top: 0x8b98aa, horizon: 0xc2c9d2, cloud: 0xd6dbe2, cloudShade: 0x8f97a3, fogColor: 0xc2c9d2 },
+    rain: { clouds: 0.96, grey: 0.85, sun: 0.22, hemi: 1.35, shadow: 0.4, fog: 0.55, fogMix: 0.6, dim: 0.08,
+      wind: 0.7, top: 0x606b7a, horizon: 0x949ca7, cloud: 0x8b94a1, cloudShade: 0x4f5763, fogColor: 0x949ca7,
+      precip: "rain", amount: 0.8 },
+    storm: { clouds: 1, grey: 1, sun: 0.08, hemi: 1.2, shadow: 0.2, fog: 0.42, fogMix: 0.75, dim: 0.2,
+      wind: 1.2, top: 0x3a4250, horizon: 0x69717d, cloud: 0x5d6673, cloudShade: 0x2c323d, fogColor: 0x69717d,
+      precip: "rain", amount: 1, lightning: true },
+    snow: { clouds: 0.9, grey: 0.75, sun: 0.35, hemi: 1.4, shadow: 0.5, fog: 0.5, fogMix: 0.6, dim: 0,
+      wind: 0.35, top: 0xaab6c4, horizon: 0xe6ecf2, cloud: 0xeef1f5, cloudShade: 0xb3bcc8, fogColor: 0xe6ecf2,
+      precip: "snow", amount: 1 },
+    sandstorm: { clouds: 0.25, grey: 0.9, sun: 0.4, hemi: 1.35, shadow: 0.5, fog: 0.22, fogMix: 0.9, dim: 0.05,
+      wind: 1.6, top: 0xb98a55, horizon: 0xe0b981, cloud: 0xd2a56d, cloudShade: 0x946d42, fogColor: 0xdcb37c,
+      precip: "sand", amount: 1 },
+    mist: { clouds: 0.6, grey: 0.6, sun: 0.4, hemi: 1.3, shadow: 0.45, fog: 0.3, fogMix: 0.75, dim: 0,
+      wind: 0.1, top: 0xa9b4be, horizon: 0xd4dadf, cloud: 0xd9dee3, cloudShade: 0xa5adb6, fogColor: 0xd4dadf }
+  };
+  // One particle program; a weather is a set of numbers (drops per box, metres, m/s).
+  var PRECIP = {
+    rain: { fall: 22, drift: 1.2, size: 0.018, length: 0.75, alpha: 0.55, color: 0xbfcbd9, round: 0, sway: 0, box: 26, height: 22 },
+    snow: { fall: 2.4, drift: 0.8, size: 0.05, length: 0, alpha: 0.85, color: 0xffffff, round: 1, sway: 0.45, box: 34, height: 24 },
+    sand: { fall: 1.2, drift: 16, size: 0.025, length: 0.55, alpha: 0.35, color: 0xe3c089, round: 0, sway: 0.2, box: 30, height: 14 }
+  };
+  var PRECIP_COUNT = { low: 320, medium: 1000, high: 2400 };
+  var SKY_QUALITY = { low: 0, medium: 1, high: 2 };
+  // Looks whose sky has no day to move through; space only lets the sun travel.
+  var FIXED = { underwater: true, "cozy-indoors": true, space: true };
+  var DAY_FOR_DARK = { "neon-city": "overcast", "spooky-fog": "overcast", night: "sunny-day", space: "space" };
+  var BLOOM_MAX = 0.55;
+  var BLOOM_FLOOR = 0.9;
+  var MIN_LIGHT_ELEVATION = 6 * DEG;
+  var SUN_STEP = Math.cos(0.25 * DEG);
+  // Six-face library skies, from data/textures.json (test-enforced): [hashes px nx py ny pz nz].
+  var SKY_LIBRARY = {
+    "star_sky_deep": { files: ["80544906bc", "46491e575d", "22593f09b3", "2babafdb89", "256a71eb1c", "833817fd6a"], sun: [0.5, 0.6, -0.62], hour: 12 },
+    "star_sky_dust": { files: ["142e41e933", "2167fa866c", "13ab0be84c", "f030c45bb7", "3712576d84", "f21684d1c6"], sun: [0.5, 0.6, -0.62], hour: 12 },
+    "star_sky_gloom": { files: ["d8b4f26e40", "b2f6ebcd79", "bb7f885fa1", "3f2c6cad04", "7b0516e0e2", "9d5b98c289"], sun: [0.5, 0.6, -0.62], hour: 12 },
+    "star_sky_home": { files: ["cad04e08dd", "1e223ff728", "0aa2d105f3", "1bd28aaf74", "24c192664e", "1349dd4a12"], sun: [0.5, 0.6, -0.62], hour: 12 },
+    "star_sky_toxic": { files: ["73423df1af", "7c57bf9b06", "9036c9e1cf", "4354f9e050", "8f2f95ae26", "51f4a540b1"], sun: [0.5, 0.6, -0.62], hour: 12 },
+    "sky_clear_noon": { files: ["88cba6ad7f", "2f4a23f243", "a85ce51f01", "be9d14a1e3", "ce8def6161", "c11d438628"], sun: [0.527, 0.749, 0.402], hour: 12.5 },
+    "sky_partly_cloudy": { files: ["c08c980266", "5bb9b10aa8", "8331d069b3", "036c45c2e8", "39248a1240", "fdbcee573f"], sun: [0.561, 0.732, 0.386], hour: 13 },
+    "sky_fluffy_day": { files: ["95760f6baf", "7cd0cc4da0", "98ddcbda86", "0d60edb189", "cf95c23a8e", "3d1de543e9"], sun: [0.583, 0.68, 0.444], hour: 12 },
+    "sky_clear_morning": { files: ["462c2bb99b", "38333f9bfe", "2d85b930db", "48a9b3a9df", "e4a4981ba0", "9de04b6fe8"], sun: [0.697, 0.481, 0.531], hour: 9 },
+    "sky_overcast": { files: ["cca773b0dd", "a962ba98fc", "25ac8cf414", "15b9243b81", "f7a64372ba", "4db0deb14e"], sun: [0.778, 0.371, 0.507], hour: 13 },
+    "sky_overcast_soft": { files: ["2dfda3d694", "cc7a999c90", "7290895306", "8e0531f242", "abf36764c5", "4a9a6a1c24"], sun: [0.811, 0.565, -0.15], hour: 11 },
+    "sky_misty_morning": { files: ["bb5f9abf2f", "c93c0eedc8", "6d94d1542b", "821050a5d5", "e6a121e1e0", "ef62e5994e"], sun: [0.536, 0.698, 0.475], hour: 8 },
+    "sky_golden_afternoon": { files: ["fd935a7009", "d2c9c5b07e", "77333b3de4", "3814c0b294", "78d04a15b7", "aef55dabcf"], sun: [0.758, 0.301, 0.578], hour: 16.5 },
+    "sky_sunset_clouds": { files: ["66411aee86", "0b72703004", "9a94be6b70", "ce01febaea", "0db60cd444", "0b12dcddd0"], sun: [0.623, 0.061, 0.78], hour: 18 },
+    "sky_sunset_fire": { files: ["1c1c8a8d5a", "001e9d3d3a", "cabf172214", "70b4fb450a", "5e772b6eb1", "e9565c7e8b"], sun: [0.758, 0.301, 0.578], hour: 18.2 },
+    "sky_dusk_pink": { files: ["48832f9ace", "d5dcd11e71", "7e890082b4", "7c2cb07677", "988e9fd9b2", "cc20342d54"], sun: [0.793, 0.206, 0.574], hour: 18.5 },
+    "sky_dawn_soft": { files: ["890cee214f", "3eb0500d21", "90835fa907", "dad46805aa", "0efa6c61ed", "941d759f42"], sun: [0.8, 0.158, 0.579], hour: 6 },
+    "sky_night_stars": { files: ["dc8b02feee", "2a912e5082", "502391057b", "fc615021d1", "e444626ea7", "d9ade02b41"], sun: [0.778, 0.278, 0.563], hour: 22 },
+    "sky_night_moon": { files: ["5f88200dc0", "6c9dbf55cb", "d8c7eca866", "6ba2204395", "ab0e244dcf", "4dfe65331f"], sun: [0.788, 0.23, 0.571], hour: 21 }
+  };
+
+  // ---- small maths ----
+
+  function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
+  function num(value, fallback) { var n = Number(value); return Number.isFinite(n) ? n : fallback; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function smooth(low, high, value) {
+    var t = clamp((value - low) / ((high - low) || 1e-6), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+  function wrapHour(h) { return ((h % 24) + 24) % 24; }
+  function arc(from, to) { return ((to - from + 36) % 24) - 12; }
+  function luma(v, i) { return 0.2126 * v[i] + 0.7152 * v[i + 1] + 0.0722 * v[i + 2]; }
+
+  function hexOf(value, fallback) {
+    if (typeof value === "number" && value >= 0 && value <= 0xffffff) return Math.round(value);
+    if (typeof value === "string") {
+      var match = /^#?([0-9a-f]{6})$/i.exec(value.trim());
+      if (match) return parseInt(match[1], 16);
+    }
+    return fallback;
+  }
+
+  // Keeps a game's colour off pure white and black, so a sky can never dazzle or vanish.
+  function safeColor(hex, minL, maxL) {
+    var r = ((hex >> 16) & 255) / 255;
+    var g = ((hex >> 8) & 255) / 255;
+    var b = (hex & 255) / 255;
+    var high = Math.max(r, g, b);
+    var low = Math.min(r, g, b);
+    var light = (high + low) / 2;
+    var wanted = clamp(light, minL, maxL);
+    var sat = high === low ? 0 : (high - low) / (1 - Math.abs(2 * light - 1) || 1);
+    sat = Math.min(sat, 0.92);
+    var c = (1 - Math.abs(2 * wanted - 1)) * sat;
+    var hue;
+    if (high === low) hue = 0;
+    else if (high === r) hue = ((g - b) / (high - low) + 6) % 6;
+    else if (high === g) hue = (b - r) / (high - low) + 2;
+    else hue = (r - g) / (high - low) + 4;
+    var x = c * (1 - Math.abs((hue % 2) - 1));
+    var m = wanted - c / 2;
+    var parts = hue < 1 ? [c, x, 0] : hue < 2 ? [x, c, 0] : hue < 3 ? [0, c, x] : hue < 4 ? [0, x, c] : hue < 5 ? [x, 0, c] : [c, 0, x];
+    return (Math.round((parts[0] + m) * 255) << 16) + (Math.round((parts[1] + m) * 255) << 8) + Math.round((parts[2] + m) * 255);
+  }
+
+  // Sun and moon travel one tilted circle: rising east (6h), peaking at `peak`, setting west (18h).
+  function bodyDirection(angle, peakDeg, azimuthDeg, out) {
+    var tilt = (90 - peakDeg) * DEG;
+    var az = azimuthDeg * DEG;
+    var sx = Math.sin(az);
+    var sz = Math.cos(az);
+    var c = Math.cos(angle);
+    var s = Math.sin(angle);
+    out.x = c * sz + s * Math.sin(tilt) * sx;
+    out.y = s * Math.cos(tilt);
+    out.z = -c * sx + s * Math.sin(tilt) * sz;
+    return out;
+  }
+
+  // ---- the sky table: rows of numbers per half hour, one table per weather ----
+
+  var TOP = 0;
+  var HORIZON = 3;
+  var BOTTOM = 6;
+  var CLOUD = 9;
+  var CLOUD_SHADE = 12;
+  var SUN_DISC = 15;
+  var GLOW_TINT = 18;
+  var SUN_LIGHT = 21;
+  var HEMI_SKY = 24;
+  var HEMI_GROUND = 27;
+  var FOG_DIRECT = 30;
+  var FOG_RADIANCE = 33;
+  var TINT = 36;
+  var CURVE = 39;
+  var CLOUDS = 40;
+  var SUN_SIZE = 41;
+  var GLOW = 42;
+  var STARS = 43;
+  var SUN_I = 44;
+  var SHADOW = 45;
+  var SOFT = 46;
+  var HEMI_I = 47;
+  var ENV = 48;
+  var NEAR = 49;
+  var FAR = 50;
+  var DENSITY = 51;
+  var BLOOM_S = 52;
+  var BLOOM_R = 53;
+  var BLOOM_T = 54;
+  var SATURATION = 55;
+  var CONTRAST = 56;
+  var VIGNETTE = 57;
+  var GLOW_AMOUNT = 58;
+  var GREY = 59;
+  var WIND = 60;
+  var FIELDS = 61;
+  var GREY_LINEAR = Math.pow((128 / 255 + 0.055) / 1.055, 2.4);
+
+  var look3d = null;
+  var radianceCache = {};
+
+  // Same inverse as look3d.radianceFor with fewer rounds: the sky table needs dozens per game.
+  function radiance(tone, exposure, hex) {
+    var key = tone + "|" + exposure + "|" + hex;
+    if (radianceCache[key]) return radianceCache[key];
+    var target = look3d.hexToLinear(hex).map(function (x) { return clamp(x, 0.0005, 0.96); });
+    var guess = target.map(function (x) { return x / exposure; });
+    for (var round = 0; round < 4; round += 1) {
+      for (var channel = 0; channel < 3; channel += 1) {
+        var low = 0;
+        var high = 16;
+        for (var step = 0; step < 14; step += 1) {
+          guess[channel] = (low + high) / 2;
+          if (look3d.toneMap(tone, guess, exposure)[channel] < target[channel]) low = guess[channel];
+          else high = guess[channel];
+        }
+        guess[channel] = (low + high) / 2;
+      }
+    }
+    radianceCache[key] = guess;
+    return guess;
+  }
+
+  function putLinear(row, at, hex) {
+    var rgb = look3d.hexToLinear(hex);
+    row[at] = rgb[0]; row[at + 1] = rgb[1]; row[at + 2] = rgb[2];
+  }
+
+  function putRadiance(row, at, hex, tone, exposure) {
+    var rgb = radiance(tone, exposure, hex);
+    row[at] = rgb[0]; row[at + 1] = rgb[1]; row[at + 2] = rgb[2];
+  }
+
+  // A look as numbers, under the game's own tone curve (one curve all day: changing it is a hitch).
+  function vectorOf(preset, tone, exposure, overrides) {
+    var row = new Float32Array(FIELDS);
+    var sky = Object.assign({}, preset.sky, overrides || {});
+    putRadiance(row, TOP, sky.top, tone, exposure);
+    putRadiance(row, HORIZON, sky.horizon, tone, exposure);
+    putRadiance(row, BOTTOM, sky.bottom, tone, exposure);
+    putRadiance(row, CLOUD, sky.cloud, tone, exposure);
+    putRadiance(row, CLOUD_SHADE, sky.cloudShade, tone, exposure);
+    putLinear(row, SUN_DISC, sky.sun);
+    row[CURVE] = sky.curve;
+    row[CLOUDS] = sky.clouds || 0;
+    row[SUN_SIZE] = sky.sunSize > 0 ? sky.sunSize * DEG : 0;
+    row[GLOW] = sky.glow || 0;
+    row[STARS] = sky.stars || 0;
+    putLinear(row, SUN_LIGHT, preset.sun.color);
+    row[SUN_I] = preset.sun.intensity;
+    row[SHADOW] = preset.sun.shadow;
+    row[SOFT] = preset.sun.softness;
+    putLinear(row, HEMI_SKY, preset.hemi.sky);
+    putLinear(row, HEMI_GROUND, preset.hemi.ground);
+    row[HEMI_I] = preset.hemi.intensity;
+    row[ENV] = preset.env;
+    var fog = preset.fog;
+    var fogHex = fog && fog.color !== undefined ? fog.color : sky.horizon;
+    putLinear(row, FOG_DIRECT, fogHex);
+    putRadiance(row, FOG_RADIANCE, fogHex, tone, exposure);
+    if (!fog) {
+      row[NEAR] = 60; row[FAR] = 200; row[DENSITY] = 0.0005;
+    } else if (fog.density !== undefined) {
+      row[DENSITY] = fog.density; row[FAR] = 2.2 / fog.density; row[NEAR] = row[FAR] * 0.25;
+    } else {
+      row[NEAR] = fog.near; row[FAR] = fog.far; row[DENSITY] = 2.2 / fog.far;
+    }
+    var post = preset.post || {};
+    var bloom = post.bloom || [0, 0.4, 1.15];
+    row[BLOOM_S] = Math.min(bloom[0], BLOOM_MAX);
+    row[BLOOM_R] = bloom[1];
+    row[BLOOM_T] = Math.max(bloom[2], BLOOM_FLOOR);
+    row[SATURATION] = post.saturation === undefined ? 1 : post.saturation;
+    row[CONTRAST] = post.contrast === undefined ? 1 : post.contrast;
+    putLinear(row, TINT, post.tint === undefined ? 0xffffff : post.tint);
+    row[VIGNETTE] = post.vignette || 0;
+    return row;
+  }
+
+  // A surface facing up, in sun or shade: the same model the presets were calibrated with.
+  function meter(row, sunSin, tone, exposure, shade) {
+    var rgb = [0, 1, 2].map(function (i) {
+      var env = (0.6 * row[TOP + i] + 0.4 * row[HORIZON + i]) * row[ENV];
+      return GREY_LINEAR * (row[SUN_LIGHT + i] * row[SUN_I] * sunSin / Math.PI * shade +
+        row[HEMI_SKY + i] * row[HEMI_I] / Math.PI + env);
+    });
+    var out = look3d.toneMap(tone, rgb, exposure).map(function (x) {
+      x = clamp(x, 0, 1);
+      return Math.round((x <= 0.0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - 0.055) * 255);
+    });
+    return 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2];
+  }
+
+  // Keeps a row readable: hemisphere up or down until a lit surface lands in the window.
+  function calibrate(row, sunSin, tone, exposure, day, dim) {
+    var lo = lerp(76, 112, day) * (1 - dim);
+    var hi = lerp(116, 142, day);
+    var floor = lerp(44, 62, day) * (1 - dim * 0.5);
+    function lit() { return meter(row, sunSin, tone, exposure, 1); }
+    function solve(wanted, low, high) {
+      for (var i = 0; i < 14; i += 1) {
+        row[HEMI_I] = (low + high) / 2;
+        if (lit() < wanted) low = row[HEMI_I];
+        else high = row[HEMI_I];
+      }
+      row[HEMI_I] = (low + high) / 2;
+    }
+    var now = lit();
+    // Blue night light needs a big multiplier to read as anything; it stays ambient.
+    if (now < lo) solve(lo, row[HEMI_I], 12);
+    else if (now > hi) solve(hi, 0.1, row[HEMI_I]);
+    var shade = meter(row, sunSin, tone, exposure, 1 - row[SHADOW]);
+    if (shade < floor) {
+      // Soften the shadow first, so shade rises without brightening the sunlit side.
+      for (var step = 0; step < 8 && shade < floor; step += 1) {
+        row[SHADOW] *= 0.85;
+        shade = meter(row, sunSin, tone, exposure, 1 - row[SHADOW]);
+      }
+    }
+  }
+
+  function applyWeather(row, weather, base) {
+    if (!weather || !weather.grey && !weather.clouds) return;
+    var grey = weather.grey;
+    var scale = clamp(luma(row, HORIZON) / Math.max(base.dayLuma, 1e-3), 0.1, 1);
+    var tones = base.tones[weather.id];
+    if (tones) {
+      [[TOP, tones.top], [HORIZON, tones.horizon], [BOTTOM, tones.horizon], [CLOUD, tones.cloud], [CLOUD_SHADE, tones.cloudShade]].forEach(function (pair) {
+        for (var i = 0; i < 3; i += 1) row[pair[0] + i] = lerp(row[pair[0] + i], pair[1][i] * scale, grey);
+      });
+      for (var f = 0; f < 3; f += 1) {
+        row[FOG_RADIANCE + f] = lerp(row[FOG_RADIANCE + f], tones.fogRadiance[f] * scale, weather.fogMix);
+        row[FOG_DIRECT + f] = lerp(row[FOG_DIRECT + f], tones.fogDirect[f] * scale, weather.fogMix);
+      }
+    }
+    row[CLOUDS] = Math.max(row[CLOUDS], weather.clouds);
+    row[GLOW] *= 1 - grey * 0.85;
+    row[GLOW_AMOUNT] *= 1 - grey;
+    row[SUN_I] *= weather.sun;
+    row[HEMI_I] *= weather.hemi;
+    row[SHADOW] *= weather.shadow;
+    row[ENV] *= 1 - grey * 0.3;
+    row[NEAR] *= weather.fog;
+    row[FAR] *= weather.fog;
+    row[DENSITY] /= weather.fog;
+    row[BLOOM_S] *= 1 - grey * 0.6;
+    row[GREY] = grey;
+  }
+
+  // ---- building a game's tables (palette: day, dusk and night looks, each a vector) ----
+
+  function resolvePalette(lookId, looks, tuning, tone, exposure) {
+    var base = look3d.presets[lookId];
+    looks = looks || {};
+    var fixed = !!FIXED[lookId];
+    var named = {
+      day: fixed ? lookId : looks.day || (base.dark || lookId === "golden-hour" ? DAY_FOR_DARK[lookId] || "sunny-day" : lookId),
+      dusk: fixed ? lookId : looks.dusk || "golden-hour",
+      night: fixed ? lookId : looks.night || (base.dark ? lookId : "night")
+    };
+    function make(phase, bounds) {
+      var id = look3d.presets[named[phase]] ? named[phase] : lookId;
+      var colors = (tuning && tuning.colors && tuning.colors[phase]) || {};
+      var overrides = {};
+      ["top", "horizon", "bottom", "cloud", "cloudShade"].forEach(function (key) {
+        var hex = hexOf(colors[key], null);
+        if (hex !== null) overrides[key] = safeColor(hex, bounds[0], bounds[1]);
+      });
+      return vectorOf(look3d.presets[id], tone, exposure, overrides);
+    }
+    var palette = {
+      named: named,
+      fixed: fixed,
+      day: make("day", [0.28, 0.92]),
+      dusk: make("dusk", [0.18, 0.9]),
+      night: make("night", [0.03, 0.42])
+    };
+    var dayPreset = look3d.presets[named.day] || base;
+    var nightPreset = look3d.presets[named.night] || base;
+    palette.path = {
+      sunPeak: clamp(num(tuning && tuning.sun && tuning.sun.peak, dayPreset.sun.elevation), 15, 85),
+      sunAzimuth: num(tuning && tuning.sun && tuning.sun.azimuth, dayPreset.sun.azimuth),
+      moonPeak: clamp(nightPreset.sun.elevation, 15, 75),
+      moonAzimuth: nightPreset.sun.azimuth
+    };
+    palette.twilight = palette.dusk.slice();
+    for (var i = 0; i < FIELDS; i += 1) palette.twilight[i] = lerp(palette.dusk[i], palette.night[i], 0.55);
+    var duskHorizon = hexOf(tuning && tuning.colors && tuning.colors.dusk && tuning.colors.dusk.horizon, null);
+    var glow = duskHorizon !== null ? safeColor(duskHorizon, 0.3, 0.8) : (look3d.presets[named.dusk] || look3d.presets["golden-hour"]).sky.horizon;
+    var glowRgb = radiance(tone, exposure, glow);
+    ["day", "dusk", "night", "twilight"].forEach(function (name) {
+      palette[name][GLOW_TINT] = glowRgb[0];
+      palette[name][GLOW_TINT + 1] = glowRgb[1];
+      palette[name][GLOW_TINT + 2] = glowRgb[2];
+    });
+    palette.dayLuma = luma(palette.day, HORIZON);
+    palette.tones = {};
+    WEATHER_IDS.forEach(function (id) {
+      var w = WEATHER[id];
+      if (!w.top) return;
+      palette.tones[id] = {
+        top: radiance(tone, exposure, w.top),
+        horizon: radiance(tone, exposure, w.horizon),
+        cloud: radiance(tone, exposure, w.cloud),
+        cloudShade: radiance(tone, exposure, w.cloudShade),
+        fogRadiance: radiance(tone, exposure, w.fogColor),
+        fogDirect: look3d.hexToLinear(w.fogColor)
+      };
+    });
+    return palette;
+  }
+
+  function paletteAt(palette, hour, out) {
+    if (palette.fixed) { out.set(palette.day); return; }
+    for (var i = 0; i < KEYS.length - 1; i += 1) {
+      var a = KEYS[i];
+      var b = KEYS[i + 1];
+      if (hour >= a[0] && hour <= b[0]) {
+        var t = smooth(a[0], b[0], hour);
+        var from = palette[a[1]];
+        var to = palette[b[1]];
+        for (var k = 0; k < FIELDS; k += 1) out[k] = lerp(from[k], to[k], t);
+        return;
+      }
+    }
+    out.set(palette.night);
+  }
+
+  var poseTmp = { x: 0, y: 1, z: 0 };
+
+  // Height of the sun above the horizon (sin) at this hour, and of the light in use.
+  function elevations(hour, path) {
+    bodyDirection((hour - 6) / 12 * Math.PI, path.sunPeak, path.sunAzimuth, poseTmp);
+    var sun = Math.asin(clamp(poseTmp.y, -1, 1));
+    bodyDirection((hour + 6) / 12 * Math.PI, path.moonPeak, path.moonAzimuth, poseTmp);
+    var moon = Math.asin(clamp(poseTmp.y, -1, 1));
+    return { sun: sun, moon: moon, light: sun > 0 ? sun : moon, up: sun > 0 };
+  }
+
+  function buildTable(palette, weatherId, tone, exposure) {
+    var weather = weatherId === "clear" ? null : Object.assign({ id: weatherId }, WEATHER[weatherId]);
+    var table = new Float32Array(FIELDS * (TABLE_ROWS + 1));
+    var row = new Float32Array(FIELDS);
+    var path = palette.path;
+    for (var index = 0; index < TABLE_ROWS; index += 1) {
+      var hour = index * TABLE_STEP;
+      paletteAt(palette, hour, row);
+      var pose = elevations(hour, path);
+      var day = smooth(-4 * DEG, 14 * DEG, pose.sun);
+      if (palette.fixed) {
+        row[GLOW_AMOUNT] = 0;
+      } else {
+        row[GLOW_AMOUNT] = (1 - clamp(Math.abs(pose.sun - 2 * DEG) / (20 * DEG), 0, 1)) * 1.2;
+        row[SUN_I] *= smooth(0, 8 * DEG, Math.max(pose.light, 0));
+      }
+      applyWeather(row, weather, palette);
+      row[WIND] = (weather ? weather.wind : WEATHER.clear.wind);
+      if (!palette.fixed) {
+        var sunSin = Math.sin(Math.max(pose.light, MIN_LIGHT_ELEVATION));
+        calibrate(row, sunSin, tone, exposure, day, weather ? weather.dim : 0);
+      }
+      table.set(row, index * FIELDS);
+    }
+    table.set(table.subarray(0, FIELDS), TABLE_ROWS * FIELDS);
+    return table;
+  }
+
+  function tableInto(table, hour, out) {
+    var scaled = wrapHour(hour) / TABLE_STEP;
+    var index = Math.min(Math.floor(scaled), TABLE_ROWS - 1);
+    var f = scaled - index;
+    var a = index * FIELDS;
+    var b = a + FIELDS;
+    for (var k = 0; k < FIELDS; k += 1) out[k] = table[a + k] + (table[b + k] - table[a + k]) * f;
+  }
+
+  // ---- shaders ----
+
+  var SKY_VERTEX = [
+    "uniform mat4 lookRay;",
+    "varying vec3 vLookDir;",
+    "void main() {",
+    "  vLookDir = ( lookRay * vec4( position.xy, 1.0, 1.0 ) ).xyz;",
+    "  gl_Position = vec4( position.xy, 1.0, 1.0 );",
+    "}"
+  ].join("\n");
+
+  var SKY_FRAGMENT = [
+    "uniform vec3 top;",
+    "uniform vec3 horizon;",
+    "uniform vec3 bottom;",
+    "uniform float curve;",
+    "uniform vec3 sunDir;",
+    "uniform vec3 sunColor;",
+    "uniform float sunSize;",
+    "uniform float sunGlow;",
+    "uniform vec3 glowTint;",
+    "uniform float glowAmount;",
+    "uniform vec3 moonDir;",
+    "uniform vec3 moonColor;",
+    "uniform float moonSize;",
+    "uniform float moonGlow;",
+    "uniform vec3 cloudColor;",
+    "uniform vec3 cloudShade;",
+    "uniform float cloudCover;",
+    "uniform float cloudBlocky;",
+    "uniform float cloudScale;",
+    "uniform vec2 cloudOffset;",
+    "uniform sampler2D noiseMap;",
+    "uniform float stars;",
+    "uniform float starsAll;",
+    "uniform float skyTime;",
+    "uniform float aurora;",
+    "uniform vec3 auroraA;",
+    "uniform vec3 auroraB;",
+    "uniform vec3 hazeColor;",
+    "uniform float haze;",
+    "uniform vec3 flashColor;",
+    "uniform float flash;",
+    "uniform vec3 flashDir;",
+    "uniform int planetCount;",
+    "uniform vec4 planets[ 3 ];",
+    "uniform vec3 planetColors[ 3 ];",
+    "uniform vec3 planetAlts[ 3 ];",
+    "uniform samplerCube skybox;",
+    "uniform float skyboxMix;",
+    "uniform float skyboxGain;",
+    "varying vec3 vLookDir;",
+    "float lookHash3( vec3 p3 ) {",
+    "  p3 = fract( p3 * 0.1031 );",
+    "  p3 += dot( p3, p3.zyx + 31.32 );",
+    "  return fract( ( p3.x + p3.y ) * p3.z );",
+    "}",
+    "void addStars( inout vec3 color, vec3 dir, float h ) {",
+    "  float amount = stars * ( starsAll > 0.5 ? 1.0 : smoothstep( 0.02, 0.25, h ) );",
+    "  if ( amount <= 0.0 ) return;",
+    "#if SKY_QUALITY > 0",
+    "  vec3 p = dir * 180.0;",
+    "  vec3 cell = floor( p );",
+    "  float pick = lookHash3( cell );",
+    "  if ( pick < 0.9962 ) return;",
+    "  vec3 centre = vec3( lookHash3( cell + 1.1 ), lookHash3( cell + 2.2 ), lookHash3( cell + 3.3 ) );",
+    "  float size = 0.06 + 0.12 * pick;",
+    "  float d = length( fract( p ) - centre ) / size;",
+    "  float twinkle = 0.7 + 0.3 * sin( skyTime * ( 1.5 + centre.x * 2.5 ) + centre.y * 40.0 );",
+    "  vec3 tint = mix( vec3( 0.75, 0.85, 1.0 ), vec3( 1.0, 0.86, 0.72 ), centre.z );",
+    "  color += tint * amount * 1.6 * twinkle * smoothstep( 1.0, 0.0, d );",
+    "#else",
+    "  vec3 cell = floor( dir * 140.0 );",
+    "  float star = step( 0.9972, lookHash3( cell ) ) * ( 0.5 + 0.5 * lookHash3( cell + 7.0 ) );",
+    "  color += vec3( star * amount * 1.4 );",
+    "#endif",
+    "}",
+    "void addMoon( inout vec3 color, vec3 dir, float h ) {",
+    "  if ( moonSize <= 0.0 ) return;",
+    "  float facing = dot( dir, moonDir );",
+    "  color += moonColor * moonGlow * pow( max( facing, 0.0 ), 180.0 ) * smoothstep( -0.05, 0.05, h );",
+    "  if ( facing < cos( moonSize * 1.2 ) ) return;",
+    "  vec3 side = normalize( cross( moonDir, vec3( 0.0, 1.0, 0.001 ) ) );",
+    "  vec3 up = cross( side, moonDir );",
+    "  vec2 d = vec2( dot( dir, side ), dot( dir, up ) ) / sin( moonSize );",
+    "  float radius = length( d );",
+    "  float disc = smoothstep( 1.0, 0.95, radius ) * smoothstep( -0.05, 0.05, h );",
+    "  float marks = textureLod( noiseMap, d * 0.08 + 0.3, 0.0 ).r;",
+    "  float shade = 0.72 + 0.5 * smoothstep( 0.35, 0.7, marks );",
+    "  color = mix( color, moonColor * shade, disc );",
+    "}",
+    "void addPlanets( inout vec3 color, vec3 dir ) {",
+    "  for ( int i = 0; i < planetCount; i ++ ) {",
+    "    vec3 at = planets[ i ].xyz;",
+    "    float size = planets[ i ].w;",
+    "    float facing = dot( dir, at );",
+    "    float reach = cos( size * 1.9 );",
+    "    if ( facing < reach ) continue;",
+    "    vec3 side = normalize( cross( at, vec3( 0.0, 1.0, 0.001 ) ) );",
+    "    vec3 up = cross( side, at );",
+    "    vec2 d = vec2( dot( dir, side ), dot( dir, up ) ) / sin( size );",
+    "    float radius = length( d );",
+    "    vec3 normal = normalize( side * d.x + up * d.y + at * sqrt( max( 1.0 - radius * radius, 0.0 ) ) );",
+    "    float light = max( dot( normal, sunDir ), 0.0 ) * 0.9 + 0.1;",
+    "    float bands = textureLod( noiseMap, vec2( d.x * 0.12, d.y * 0.55 ) + 0.5, 0.0 ).r;",
+    "    vec3 surface = mix( planetColors[ i ], planetAlts[ i ], smoothstep( 0.35, 0.65, bands ) ) * light;",
+    "    color = mix( color, surface, smoothstep( 1.0, 0.97, radius ) );",
+    "    color += planetColors[ i ] * 0.35 * smoothstep( 1.25, 1.0, radius ) * smoothstep( 0.92, 1.0, radius );",
+    "  }",
+    "}",
+    "void addAurora( inout vec3 color, vec3 dir, float h ) {",
+    "#if SKY_QUALITY > 0",
+    "  if ( aurora <= 0.0 || h < 0.05 ) return;",
+    "  vec2 p = dir.xz / ( h + 0.35 );",
+    "  float wave = texture2D( noiseMap, vec2( p.x * 0.14 + skyTime * 0.006, p.y * 0.05 ) ).r;",
+    "  float band = smoothstep( 0.42, 0.72, texture2D( noiseMap, vec2( p.x * 0.05 + wave * 0.12, p.y * 0.02 + skyTime * 0.004 ) ).r );",
+    "  float height = smoothstep( 0.05, 0.22, h ) * smoothstep( 0.82, 0.3, h );",
+    "  color += mix( auroraA, auroraB, smoothstep( 0.1, 0.55, h ) ) * band * height * ( 0.55 + 0.45 * wave ) * aurora;",
+    "#endif",
+    "}",
+    "void addClouds( inout vec3 color, vec3 dir, float h, float facing ) {",
+    "  if ( cloudCover <= 0.0 || h <= 0.0 ) return;",
+    "  vec2 uv = dir.xz / ( h + 0.18 ) * cloudScale + cloudOffset;",
+    "  float n;",
+    "  float lit;",
+    "  float edge = 0.2;",
+    "  if ( cloudBlocky > 0.5 ) {",
+    "    n = textureLod( noiseMap, floor( uv * 3.0 ) * 0.09, 0.0 ).r;",
+    "    lit = 1.0;",
+    "    edge = 0.01;",
+    "  } else {",
+    "    vec2 p = uv * 0.12;",
+    "#if SKY_QUALITY > 0",
+    "    vec2 warp = ( texture2D( noiseMap, p * 0.37 + 0.1 ).rg - 0.5 ) * 0.09;",
+    "    n = texture2D( noiseMap, p + warp ).r * 0.72 + texture2D( noiseMap, p * 3.1 + warp ).g * 0.28;",
+    "#else",
+    "    n = texture2D( noiseMap, p ).r;",
+    "#endif",
+    "#if SKY_QUALITY > 1",
+    "    float towards = texture2D( noiseMap, p + warp + sunDir.xz * 0.018 ).r;",
+    "    lit = smoothstep( 0.2, 0.8, clamp( ( n - towards ) * 4.0 + 0.55, 0.0, 1.0 ) * 0.75 + 0.3 * max( facing, 0.0 ) );",
+    "#elif SKY_QUALITY > 0",
+    "    lit = smoothstep( 0.2, 0.8, texture2D( noiseMap, p * 1.7 + 0.4 ).g * 0.7 + 0.3 * max( facing, 0.0 ) );",
+    "#else",
+    "    lit = 0.55 + 0.4 * max( facing, 0.0 );",
+    "#endif",
+    "  }",
+    "  float threshold = mix( 0.75, 0.3, cloudCover );",
+    "  float cover = smoothstep( threshold, threshold + edge, n ) * smoothstep( 0.0, 0.2, h );",
+    "  color = mix( color, mix( cloudShade, cloudColor, lit ), cover );",
+    "}",
+    "void main() {",
+    "  vec3 dir = normalize( vLookDir );",
+    "  float h = dir.y;",
+    "  vec3 color = h >= 0.0",
+    "    ? mix( horizon, top, pow( clamp( h, 0.0, 1.0 ), curve ) )",
+    "    : mix( horizon, bottom, pow( clamp( - h * 3.0, 0.0, 1.0 ), 0.6 ) );",
+    "  float facing = dot( dir, sunDir );",
+    "  float above = smoothstep( -0.05, 0.02, h );",
+    "  if ( skyboxMix < 0.999 ) {",
+    "    float up = smoothstep( -0.12, 0.05, sunDir.y );",
+    "    color += sunColor * sunGlow * ( 0.25 * pow( max( facing, 0.0 ), 6.0 ) + pow( max( facing, 0.0 ), 60.0 ) ) * above * up;",
+    "    color += glowTint * glowAmount * pow( max( facing, 0.0 ), 2.5 ) * exp( - max( h, 0.0 ) * 7.0 ) * above;",
+    "    addStars( color, dir, h );",
+    "    addAurora( color, dir, h );",
+    "    addPlanets( color, dir );",
+    "    addMoon( color, dir, h );",
+    "    if ( sunSize > 0.0 ) {",
+    "      float disc = smoothstep( cos( sunSize ), cos( sunSize * 0.6 ), facing ) * above;",
+    "      color = mix( color, sunColor * 8.0, disc );",
+    "    }",
+    "    addClouds( color, dir, h, facing );",
+    "  }",
+    "  if ( skyboxMix > 0.0 ) {",
+    "    color = mix( color, textureCube( skybox, vec3( - dir.x, dir.y, dir.z ) ).rgb * skyboxGain, skyboxMix );",
+    "  }",
+    "  color = mix( color, hazeColor, haze * smoothstep( 0.32, 0.0, abs( h ) ) );",
+    "  if ( flash > 0.0 ) {",
+    "    color += flashColor * flash * ( 0.35 + 0.65 * pow( max( dot( dir, flashDir ), 0.0 ), 3.0 ) ) * above;",
+    "  }",
+    "  gl_FragColor = vec4( color, 1.0 );",
+    "  #include <tonemapping_fragment>",
+    "  #include <colorspace_fragment>",
+    "  gl_FragColor.rgb += ( lookHash3( vec3( gl_FragCoord.xy, 3.0 ) ) - 0.5 ) / 255.0;",
+    "}"
+  ].join("\n");
+
+  var PRECIP_VERTEX = [
+    "uniform float lookTime;",
+    "uniform vec3 lookCenter;",
+    "uniform vec3 lookBox;",
+    "uniform vec3 lookVelocity;",
+    "uniform float lookSize;",
+    "uniform float lookLength;",
+    "uniform float lookSway;",
+    "attribute vec3 lookSeed;",
+    "varying vec2 vLookUv;",
+    "varying float vLookFade;",
+    "void main() {",
+    "  vec3 moved = lookSeed * lookBox + lookVelocity * lookTime;",
+    "  vec3 halfBox = lookBox * 0.5;",
+    "  vec3 rel = mod( moved - lookCenter + halfBox, lookBox ) - halfBox;",
+    "  vec3 world = lookCenter + rel;",
+    "  world.xz += sin( lookTime * 1.3 + lookSeed.xz * 40.0 ) * lookSway;",
+    "  vec4 view = viewMatrix * vec4( world, 1.0 );",
+    "  vec3 along = vec3( 0.0, lookSize, 0.0 );",
+    "  vec3 across = vec3( lookSize, 0.0, 0.0 );",
+    "  if ( lookLength > 0.0 ) {",
+    "    vec3 velocity = normalize( ( viewMatrix * vec4( lookVelocity, 0.0 ) ).xyz );",
+    "    along = velocity * lookLength;",
+    "    across = normalize( cross( velocity, view.xyz ) ) * lookSize;",
+    "  }",
+    "  view.xyz += across * position.x + along * position.y;",
+    "  gl_Position = projectionMatrix * view;",
+    "  vLookUv = position.xy;",
+    "  vLookFade = smoothstep( 1.0, 0.7, length( rel.xz ) / halfBox.x ) * smoothstep( 0.5, 1.4, length( view.xyz ) );",
+    "}"
+  ].join("\n");
+
+  var PRECIP_FRAGMENT = [
+    "uniform vec3 lookColor;",
+    "uniform float lookAlpha;",
+    "uniform float lookRound;",
+    "varying vec2 vLookUv;",
+    "varying float vLookFade;",
+    "void main() {",
+    "  float shape = lookRound > 0.5",
+    "    ? smoothstep( 1.0, 0.25, length( vLookUv ) )",
+    "    : ( 1.0 - abs( vLookUv.x ) ) * ( 1.0 - abs( vLookUv.y ) * 0.75 );",
+    "  gl_FragColor = vec4( lookColor, shape * lookAlpha * vLookFade );",
+    "  #include <tonemapping_fragment>",
+    "  #include <colorspace_fragment>",
+    "}"
+  ].join("\n");
+
+  var BLEND_VERTEX = "varying vec2 vUv;\nvoid main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4( position.xy, 0.0, 1.0 ); }";
+  var BLEND_FRAGMENT = [
+    "uniform sampler2D a;",
+    "uniform sampler2D b;",
+    "uniform float t;",
+    "varying vec2 vUv;",
+    "void main() { gl_FragColor = mix( texture2D( a, vUv ), texture2D( b, vUv ), t ); }"
+  ].join("\n");
+
+  // Seamless value-noise fbm: red for the big shapes, green for detail. Made once, not per frame.
+  function makeNoiseData(size) {
+    function lattice(period, seed) {
+      var data = new Float32Array(period * period);
+      var state = seed >>> 0;
+      for (var i = 0; i < data.length; i += 1) {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        data[i] = state / 4294967296;
+      }
+      return data;
+    }
+    function fbm(px, py, grids, periods) {
+      var value = 0;
+      var amp = 0.5;
+      for (var o = 0; o < grids.length; o += 1) {
+        var period = periods[o];
+        var x = px * period;
+        var y = py * period;
+        var xi = Math.floor(x);
+        var yi = Math.floor(y);
+        var fx = x - xi;
+        var fy = y - yi;
+        fx = fx * fx * (3 - 2 * fx);
+        fy = fy * fy * (3 - 2 * fy);
+        var x0 = xi % period;
+        var y0 = yi % period;
+        var x1 = (x0 + 1) % period;
+        var y1 = (y0 + 1) % period;
+        var grid = grids[o];
+        var a = grid[y0 * period + x0];
+        var b = grid[y0 * period + x1];
+        var c = grid[y1 * period + x0];
+        var d = grid[y1 * period + x1];
+        value += amp * (a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy);
+        amp *= 0.5;
+      }
+      return value;
+    }
+    var periodsR = [8, 16, 32, 64, 128];
+    var periodsG = [16, 32, 64, 128];
+    var gridsR = periodsR.map(function (p, i) { return lattice(p, 1234 + i * 77); });
+    var gridsG = periodsG.map(function (p, i) { return lattice(p, 9876 + i * 131); });
+    var data = new Uint8Array(size * size * 2);
+    for (var y = 0; y < size; y += 1) {
+      for (var x = 0; x < size; x += 1) {
+        var u = x / size;
+        var v = y / size;
+        var i = (y * size + x) * 2;
+        data[i] = Math.round(clamp(fbm(u, v, gridsR, periodsR), 0, 1) * 255);
+        data[i + 1] = Math.round(clamp(fbm(u, v, gridsG, periodsG), 0, 1) * 255);
+      }
+    }
+    return data;
+  }
+
+  // ---- one game's atmosphere ----
+
+  function createAtmosphere(ctx, look, internals) {
+    var THREE = ctx.THREE;
+    var renderer = ctx.renderer;
+    var scene = ctx.scene;
+    var state = internals.state;
+    var warn = internals.warn;
+    var tone = state.preset.tone;
+    var exposure = state.preset.exposure;
+    var palette = null;
+    var tuning = {};
+    var looks = {};
+    var tables = {};
+    var rowA = new Float32Array(FIELDS);
+    var rowB = new Float32Array(FIELDS);
+    var row = new Float32Array(FIELDS);
+    var clock = {
+      hour: 12, offset: 0, over: 0, t: 1, running: false, dayLength: 120, nightLength: 120,
+      day: 1, onPhase: null, phase: "", started: false
+    };
+    var weather = { from: "clear", to: "clear", t: 1, over: 4, wind: { x: 0.8, z: 0.45 } };
+    var lightning = { next: 10, t: -1, amount: 0, dir: new THREE.Vector3(0.3, 0.6, 0.7), onFlash: null };
+    var live = { dome: null, material: null, noise: null, precip: null, precipMat: null };
+    var env = { slots: {}, blend: null, target: null, quad: null, lastA: null, lastB: null, lastT: -1, queue: [] };
+    var counters = { bakes: 0, blends: 0, tableBuilds: 0, frames: 0 };
+    var skybox = { id: null, entry: null, cube: null, mix: 0, wanted: 0, env: null, loading: false };
+    var tmpSun = new THREE.Vector3(0, 1, 0);
+    var tmpMoon = new THREE.Vector3(0, -1, 0);
+    var tmpMat = new THREE.Matrix4();
+    var tmpRot = new THREE.Matrix4();
+    var orthoProj = new THREE.Matrix4();
+    var lastHour = -1;
+    var lastBlend = -1;
+    var stars = 1;
+    var hemiBoost = 0;
+    var lastBoost = 0;
+
+    var STARS_CAP = 2;
+
+    function tierName() { return state.tier || "medium"; }
+
+    // ---- tables ----
+
+    function rebuildPalette() {
+      palette = resolvePalette(state.id, looks, tuning, tone, exposure);
+      tables = {};
+    }
+
+    function tableFor(id) {
+      if (!tables[id]) {
+        tables[id] = buildTable(palette, id, tone, exposure);
+        counters.tableBuilds += 1;
+      }
+      return tables[id];
+    }
+
+    // ---- live sky ----
+
+    function makeDome() {
+      var geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+      var material = new THREE.ShaderMaterial({
+        name: "LookLiveSky",
+        uniforms: skyUniforms(),
+        defines: { SKY_QUALITY: SKY_QUALITY[tierName()] },
+        vertexShader: SKY_VERTEX,
+        fragmentShader: SKY_FRAGMENT,
+        depthWrite: false
+      });
+      var dome = new THREE.Mesh(geometry, material);
+      dome.name = "look-live-sky";
+      dome.frustumCulled = false;
+      // Drawn last of the opaque things: covered sky pixels are never shaded.
+      dome.renderOrder = 1e6;
+      dome.userData.lookShadows = false;
+      dome.raycast = function () {};
+      dome.onBeforeRender = function (r, s, camera) {
+        var u = material.uniforms.lookRay.value;
+        if (camera.isOrthographicCamera) {
+          orthoProj.makePerspective(-0.6, 0.6, 0.4, -0.4, 1, 1000);
+          tmpMat.copy(orthoProj).invert();
+        } else {
+          tmpMat.copy(camera.projectionMatrixInverse);
+        }
+        tmpRot.extractRotation(camera.matrixWorld);
+        u.multiplyMatrices(tmpRot, tmpMat);
+      };
+      live.dome = dome;
+      live.material = material;
+      return dome;
+    }
+
+    function skyUniforms() {
+      var c = function () { return new THREE.Color(0, 0, 0); };
+      var pad = function () { return { value: 0 }; };
+      return {
+        lookRay: { value: new THREE.Matrix4() },
+        top: { value: c() }, horizon: { value: c() }, bottom: { value: c() },
+        curve: { value: 0.5 },
+        sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: c() }, sunSize: pad(), sunGlow: pad(),
+        glowTint: { value: c() }, glowAmount: pad(),
+        moonDir: { value: new THREE.Vector3(0, -1, 0) }, moonColor: { value: new THREE.Color(1.2, 1.2, 1.15) }, moonSize: { value: 2.2 * DEG }, moonGlow: { value: 0.4 },
+        cloudColor: { value: c() }, cloudShade: { value: c() }, cloudCover: pad(), cloudBlocky: pad(),
+        cloudScale: { value: 1.6 }, cloudOffset: { value: new THREE.Vector2(0, 0) },
+        noiseMap: { value: live.noise },
+        stars: pad(), starsAll: pad(), skyTime: pad(),
+        aurora: pad(), auroraA: { value: new THREE.Color(0.1, 0.9, 0.5) }, auroraB: { value: new THREE.Color(0.5, 0.25, 1) },
+        hazeColor: { value: c() }, haze: pad(),
+        flashColor: { value: new THREE.Color(0.75, 0.82, 1) }, flash: pad(), flashDir: { value: new THREE.Vector3(0, 1, 0) },
+        planetCount: { value: 0 },
+        planets: { value: [new THREE.Vector4(0, 1, 0, 0), new THREE.Vector4(0, 1, 0, 0), new THREE.Vector4(0, 1, 0, 0)] },
+        planetColors: { value: [c(), c(), c()] },
+        planetAlts: { value: [c(), c(), c()] },
+        skybox: { value: null }, skyboxMix: pad(), skyboxGain: { value: 1 }
+      };
+    }
+
+    function makeNoise() {
+      if (live.noise) return live.noise;
+      var size = tierName() === "low" ? 128 : 256;
+      var texture = new THREE.DataTexture(makeNoiseData(size), size, size, THREE.RGFormat);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+      texture.anisotropy = 2;
+      texture.needsUpdate = true;
+      live.noise = texture;
+      return texture;
+    }
+
+    function makePrecip() {
+      var count = PRECIP_COUNT[tierName()];
+      var base = new THREE.InstancedBufferGeometry();
+      base.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
+      base.setIndex([0, 1, 2, 0, 2, 3]);
+      var seeds = new Float32Array(count * 3);
+      for (var i = 0; i < seeds.length; i += 1) seeds[i] = Math.random();
+      base.setAttribute("lookSeed", new THREE.InstancedBufferAttribute(seeds, 3));
+      base.instanceCount = 1;
+      var material = new THREE.ShaderMaterial({
+        name: "LookWeather",
+        uniforms: {
+          lookTime: { value: 0 }, lookCenter: { value: new THREE.Vector3() },
+          lookBox: { value: new THREE.Vector3(26, 22, 26) }, lookVelocity: { value: new THREE.Vector3(0, -22, 0) },
+          lookSize: { value: 0.02 }, lookLength: { value: 0.75 }, lookSway: { value: 0 },
+          lookColor: { value: new THREE.Color(1, 1, 1) }, lookAlpha: { value: 0 }, lookRound: { value: 0 }
+        },
+        vertexShader: PRECIP_VERTEX,
+        fragmentShader: PRECIP_FRAGMENT,
+        transparent: true,
+        depthWrite: false
+      });
+      var mesh = new THREE.Mesh(base, material);
+      mesh.name = "look-weather";
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 1e6 + 1;
+      mesh.userData.lookShadows = false;
+      mesh.raycast = function () {};
+      live.precip = mesh;
+      live.precipMat = material;
+      live.precipMax = count;
+      live.precipKind = null;
+      live.precipAmount = 0;
+      return mesh;
+    }
+
+    function attach() {
+      if (!internals.glReady()) return;
+      if (!live.dome) makeDome();
+      if (live.dome.parent !== scene) scene.add(live.dome);
+      if (!live.precip) makePrecip();
+      if (live.precip.parent !== scene) scene.add(live.precip);
+    }
+
+    // Our PMREM background gives way to the live sky; a game's own sky picture stays.
+    function takeBackground() {
+      var mine = state.env && state.env.background && state.env.background.texture;
+      if (!scene.background || scene.background === mine || scene.background.isColor) scene.background = null;
+      if (!internals.glReady()) scene.background = new THREE.Color(0x89c7f7);
+    }
+
+    // ---- environment light: three baked skies, blended in one quad, never rebaked per frame ----
+
+    function slotPreset(name) {
+      var id = palette.named[name];
+      var preset = Object.assign({}, look3d.presets[id] || state.preset, { tone: tone, exposure: exposure });
+      if (name === "day" && tuning.colors && tuning.colors.day) {
+        var sky = Object.assign({}, preset.sky);
+        ["top", "horizon"].forEach(function (key) {
+          var hex = hexOf(tuning.colors.day[key], null);
+          if (hex !== null) sky[key] = safeColor(hex, 0.28, 0.92);
+        });
+        preset.sky = sky;
+      }
+      return preset;
+    }
+
+    function bakeSlot(name, generator) {
+      var skyScene = new THREE.Scene();
+      var mesh = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), internals.skyMaterial(slotPreset(name)));
+      skyScene.add(mesh);
+      var dir = new THREE.Vector3(0.4, name === "day" ? 0.8 : 0.3, 0.5).normalize();
+      if (name === "night") dir.set(0.3, 0.6, 0.5).normalize();
+      if (mesh.material.uniforms.sunDir) mesh.material.uniforms.sunDir.value.copy(dir);
+      var target = generator.fromScene(skyScene, 0, 0.1, 100, { size: internals.tiers[state.tier].envSize });
+      skyScene.traverse(function (node) {
+        if (node.geometry) node.geometry.dispose();
+        if (node.material) node.material.dispose();
+      });
+      counters.bakes += 1;
+      return target;
+    }
+
+    function bakeNext() {
+      if (!env.queue.length) return;
+      var name = env.queue.shift();
+      if (!internals.glReady() || typeof THREE.PMREMGenerator !== "function") return;
+      var generator = null;
+      try {
+        generator = new THREE.PMREMGenerator(renderer);
+        env.slots[name] = bakeSlot(name, generator);
+      } catch (error) {
+        warn("sky light unavailable", error);
+      } finally {
+        if (generator) { try { generator.dispose(); } catch (error) { /* nothing to free */ } }
+      }
+    }
+
+    function makeBlendTarget(sample) {
+      var image = sample.texture.image;
+      var target = new THREE.WebGLRenderTarget(image.width, image.height, {
+        type: sample.texture.type, format: sample.texture.format, depthBuffer: false,
+        generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+      });
+      target.texture.mapping = THREE.CubeUVReflectionMapping;
+      target.texture.name = "LookSkyLight";
+      if (THREE.LinearSRGBColorSpace) target.texture.colorSpace = THREE.LinearSRGBColorSpace;
+      return target;
+    }
+
+    function ensureBlend() {
+      if (env.quad || !internals.glReady()) return;
+      var geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+      var material = new THREE.ShaderMaterial({
+        name: "LookSkyLightBlend",
+        uniforms: { a: { value: null }, b: { value: null }, t: { value: 0 } },
+        vertexShader: BLEND_VERTEX,
+        fragmentShader: BLEND_FRAGMENT,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false
+      });
+      var mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      var quadScene = new THREE.Scene();
+      quadScene.add(mesh);
+      env.quad = { scene: quadScene, material: material, camera: new THREE.Camera() };
+    }
+
+    function blendLight(a, b, t) {
+      ensureBlend();
+      if (!env.quad) return;
+      var nearly = Math.abs(t - env.lastT);
+      if (a === env.lastA && b === env.lastB && (nearly < 0.015)) return;
+      var slotA = env.slots[a];
+      var slotB = env.slots[b];
+      if (!slotA || !slotB) return;
+      if (!env.target) env.target = makeBlendTarget(slotA);
+      env.quad.material.uniforms.a.value = slotA.texture;
+      env.quad.material.uniforms.b.value = slotB.texture;
+      env.quad.material.uniforms.t.value = t;
+      var before = renderer.getRenderTarget();
+      var autoClear = renderer.autoClear;
+      renderer.autoClear = false;
+      try {
+        renderer.setRenderTarget(env.target);
+        renderer.render(env.quad.scene, env.quad.camera);
+        counters.blends += 1;
+      } catch (error) {
+        warn("sky light blend failed", error);
+      } finally {
+        renderer.setRenderTarget(before);
+        renderer.autoClear = autoClear;
+      }
+      env.lastA = a; env.lastB = b; env.lastT = t;
+      if (!skybox.env && scene.environment !== env.target.texture) {
+        scene.environment = env.target.texture;
+      }
+    }
+
+    // Which two baked skies the hour sits between, and how far.
+    function lightSlots(hour) {
+      if (hour < 4.6 || hour >= 19.6) return ["night", "night", 0];
+      if (hour < 6.4) return ["night", "dusk", smooth(4.6, 6.4, hour)];
+      if (hour < 7.7) return ["dusk", "day", smooth(6.4, 7.7, hour)];
+      if (hour < 16.3) return ["day", "day", 0];
+      if (hour < 17.6) return ["day", "dusk", smooth(16.3, 17.6, hour)];
+      return ["dusk", "night", smooth(17.6, 19.6, hour)];
+    }
+
+    // ---- per frame ----
+
+    function ease(t) { return t * t * (3 - 2 * t); }
+
+    function shownHour() {
+      if (clock.t >= 1 || !clock.over) return wrapHour(clock.hour);
+      return wrapHour(clock.hour + clock.offset * (1 - ease(clock.t)));
+    }
+
+    function phaseOf(hour) {
+      if (hour < 5 || hour >= 19) return "night";
+      if (hour < 6.5) return "dawn";
+      return hour < 17.5 ? "day" : "dusk";
+    }
+
+    function setPhase(hour, silent) {
+      var phase = phaseOf(hour);
+      if (phase === clock.phase) return;
+      var was = clock.phase;
+      clock.phase = phase;
+      if (was === "night" && phase === "dawn") clock.day += 1;
+      if (!silent && clock.onPhase) {
+        try { clock.onPhase(phase, clock.day); } catch (error) { warn("onPhase failed", error); }
+      }
+    }
+
+    function advance(dt) {
+      if (clock.t < 1) clock.t = Math.min(1, clock.t + dt / clock.over);
+      if (weather.t < 1) weather.t = Math.min(1, weather.t + dt / weather.over);
+      if (clock.running) {
+        var rate = clock.hour >= 6 && clock.hour < 18 ? 12 / clock.dayLength : 12 / clock.nightLength;
+        clock.hour = wrapHour(clock.hour + rate * dt);
+      }
+      setPhase(shownHour());
+    }
+
+    function evaluate(hour) {
+      tableInto(tableFor(weather.to), hour, rowB);
+      if (weather.t < 1) {
+        tableInto(tableFor(weather.from), hour, rowA);
+        var t = ease(weather.t);
+        for (var k = 0; k < FIELDS; k += 1) row[k] = rowA[k] + (rowB[k] - rowA[k]) * t;
+      } else {
+        row.set(rowB);
+      }
+    }
+
+    function poses(hour) {
+      var path = palette.path;
+      if (palette.fixed && state.id !== "space") {
+        var fixed = state.preset.sun;
+        var fe = num(state.options.sun && state.options.sun.elevation, fixed.elevation) * DEG;
+        var fa = num(state.options.sun && state.options.sun.azimuth, fixed.azimuth) * DEG;
+        tmpSun.set(Math.cos(fe) * Math.sin(fa), Math.sin(fe), Math.cos(fe) * Math.cos(fa));
+        tmpMoon.set(0, -1, 0);
+        return;
+      }
+      bodyDirection((hour - 6) / 12 * Math.PI, path.sunPeak, path.sunAzimuth, tmpSun);
+      bodyDirection((hour + 6) / 12 * Math.PI, path.moonPeak, path.moonAzimuth, tmpMoon);
+    }
+
+    // A skybox owns the sun's place; otherwise the sun leads by day and the moon by night.
+    function lightDirection() {
+      if (skybox.entry && skybox.mix > 0.5) {
+        var s = skybox.entry.sun;
+        return tmpLight.set(s[0], Math.max(s[1], Math.sin(MIN_LIGHT_ELEVATION)), s[2]).normalize();
+      }
+      var body = tmpSun.y > 0 ? tmpSun : tmpMoon.y > 0 ? tmpMoon : tmpSun;
+      if (body.y < Math.sin(MIN_LIGHT_ELEVATION)) {
+        return tmpLight.set(body.x, Math.sin(MIN_LIGHT_ELEVATION), body.z).normalize();
+      }
+      return tmpLight.copy(body);
+    }
+
+    var tmpLight = new THREE.Vector3(0, 1, 0);
+
+    function applyLights() {
+      var hemi = state.hemi;
+      var sun = state.sun;
+      if (!hemi || !sun) return;
+      hemi.color.setRGB(row[HEMI_SKY], row[HEMI_SKY + 1], row[HEMI_SKY + 2]);
+      hemi.groundColor.setRGB(row[HEMI_GROUND], row[HEMI_GROUND + 1], row[HEMI_GROUND + 2]);
+      hemi.intensity = row[HEMI_I] + hemiBoost;
+      sun.color.setRGB(row[SUN_LIGHT], row[SUN_LIGHT + 1], row[SUN_LIGHT + 2]);
+      sun.intensity = row[SUN_I];
+      if (sun.shadow) {
+        sun.shadow.radius = row[SOFT];
+        if ("intensity" in sun.shadow) sun.shadow.intensity = row[SHADOW];
+      }
+      var dir = lightDirection();
+      // Quantised steps: a light that moved every frame would make shadows shimmer.
+      if (dir.dot(state.sunDir) < SUN_STEP) state.sunDir.copy(dir);
+    }
+
+    function applySky(hour) {
+      var material = live.material;
+      if (!material) return;
+      var u = material.uniforms;
+      u.top.value.setRGB(row[TOP], row[TOP + 1], row[TOP + 2]);
+      u.horizon.value.setRGB(row[HORIZON], row[HORIZON + 1], row[HORIZON + 2]);
+      u.bottom.value.setRGB(row[BOTTOM], row[BOTTOM + 1], row[BOTTOM + 2]);
+      u.curve.value = row[CURVE];
+      u.sunDir.value.copy(tmpSun);
+      u.moonDir.value.copy(tmpMoon);
+      u.sunColor.value.setRGB(row[SUN_DISC], row[SUN_DISC + 1], row[SUN_DISC + 2]);
+      u.sunSize.value = tmpSun.y > -0.1 ? row[SUN_SIZE] * clamp(num(tuning.sunSize, 1), 0.4, 3) : 0;
+      u.sunGlow.value = row[GLOW];
+      u.glowTint.value.setRGB(row[GLOW_TINT], row[GLOW_TINT + 1], row[GLOW_TINT + 2]);
+      u.glowAmount.value = row[GLOW_AMOUNT];
+      var showMoon = tuning.moon === false ? 0 : clamp(1 - smooth(-0.05, 0.12, tmpSun.y), 0, 1);
+      u.moonSize.value = showMoon > 0.01 ? (2.2 * DEG) * clamp(num(tuning.moonSize, 1), 0.5, 2.5) : 0;
+      u.moonGlow.value = 0.4 * showMoon * (1 - row[GREY]);
+      u.cloudColor.value.setRGB(row[CLOUD], row[CLOUD + 1], row[CLOUD + 2]);
+      u.cloudShade.value.setRGB(row[CLOUD_SHADE], row[CLOUD_SHADE + 1], row[CLOUD_SHADE + 2]);
+      u.cloudCover.value = tuning.clouds !== undefined ? clamp(Math.max(num(tuning.clouds, 0.5), row[GREY] * row[CLOUDS]), 0, 1) : row[CLOUDS];
+      var nightStars = clamp(row[STARS] * stars, 0, STARS_CAP);
+      u.stars.value = palette.fixed && state.id === "space" ? nightStars : nightStars * clamp(1 - smooth(-0.04, 0.15, tmpSun.y), 0, 1) * (1 - row[GREY] * 0.85);
+      u.starsAll.value = state.id === "space" ? 1 : 0;
+      u.skyTime.value = state.time.value;
+      var fogRgb = FOG_RADIANCE;
+      u.hazeColor.value.setRGB(row[fogRgb], row[fogRgb + 1], row[fogRgb + 2]);
+      u.haze.value = clamp((1 - row[FAR] / 4) * 0.6, 0, 0.75);
+      u.skyboxMix.value = skybox.mix;
+    }
+
+    function applyPost() {
+      var grade = state.gradePass;
+      if (grade) {
+        grade.uniforms.saturation.value = row[SATURATION];
+        grade.uniforms.contrast.value = row[CONTRAST];
+        if (grade.uniforms.tint.value) grade.uniforms.tint.value.set(row[TINT], row[TINT + 1], row[TINT + 2]);
+        grade.uniforms.vignette.value = row[VIGNETTE];
+      }
+      var bloom = state.bloomPass;
+      if (bloom) {
+        bloom.strength = clamp(row[BLOOM_S], 0, BLOOM_MAX);
+        bloom.radius = row[BLOOM_R];
+        bloom.threshold = Math.max(row[BLOOM_T], BLOOM_FLOOR);
+        if (bloom.highPassUniforms && bloom.highPassUniforms.luminosityThreshold) {
+          bloom.highPassUniforms.luminosityThreshold.value = bloom.threshold;
+        }
+      }
+    }
+
+    function fogTick(distance) {
+      var fog = state.fog;
+      if (!fog) return;
+      if (!state.fogDistance) state.fogDistance = distance;
+      else state.fogDistance += (distance - state.fogDistance) * 0.05;
+      if (state.composer) fog.color.setRGB(row[FOG_RADIANCE], row[FOG_RADIANCE + 1], row[FOG_RADIANCE + 2]);
+      else fog.color.setRGB(row[FOG_DIRECT], row[FOG_DIRECT + 1], row[FOG_DIRECT + 2]);
+      var d = state.fogDistance;
+      if (fog.isFogExp2) fog.density = row[DENSITY] / d;
+      else { fog.near = row[NEAR] * d; fog.far = row[FAR] * d; }
+    }
+
+    function applyEnvironment(hour) {
+      if (!internals.glReady()) return;
+      if ("environmentIntensity" in scene) {
+        var intensity = row[ENV];
+        if (env.lowLight && env.lowLightBase > 0) {
+          var ratio = (0.6 * luma(row, TOP) + 0.4 * luma(row, HORIZON)) / env.lowLightBase;
+          intensity *= clamp(ratio, 0.05, 1);
+        }
+        scene.environmentIntensity = intensity;
+      }
+      state.reflections.value = clamp(0.9 / Math.max(row[ENV], 0.05), 1, 6);
+      if (skybox.env && skybox.mix > 0.5) {
+        if (scene.environment !== skybox.env.texture) scene.environment = skybox.env.texture;
+        return;
+      }
+      if (palette.fixed || env.lowLight) return;
+      if (env.target && !skybox.env && scene.environment !== env.target.texture) scene.environment = env.target.texture;
+      var slots = lightSlots(hour);
+      blendLight(slots[0], slots[1], slots[2]);
+    }
+
+    function updateLightning(dt) {
+      var wanted = WEATHER[weather.to].lightning && weather.t > 0.4;
+      var softer = !!(ctx.ui && ctx.ui.softFlashes);
+      hemiBoost = 0;
+      if (lightning.t >= 0) {
+        // A single soft pulse: quick rise, slow fade. It never flickers on and off.
+        lightning.t += dt;
+        var pulse = lightning.t < 0.09 ? lightning.t / 0.09 : Math.exp(-(lightning.t - 0.09) * 4.5);
+        lightning.amount = pulse * (softer ? 0.1 : 0.55);
+        hemiBoost = softer ? 0 : pulse * 0.35;
+        if (lightning.t > 1.2) { lightning.t = -1; lightning.amount = 0; hemiBoost = 0; }
+      }
+      if (!wanted) { lightning.amount = 0; return; }
+      lightning.next -= dt;
+      if (lightning.next <= 0 && lightning.t < 0) {
+        lightning.next = 8 + Math.random() * 12;
+        lightning.t = 0;
+        var a = Math.random() * Math.PI * 2;
+        lightning.dir.set(Math.cos(a) * 0.8, 0.5, Math.sin(a) * 0.8).normalize();
+        lightning.count = (lightning.count || 0) + 1;
+        if (lightning.onFlash) {
+          try { lightning.onFlash(); } catch (error) { warn("onLightning failed", error); }
+        }
+      }
+    }
+
+    function applyPrecip(dt, camera) {
+      if (!live.precip) return;
+      var material = live.precipMat;
+      var u = material.uniforms;
+      u.lookTime.value = state.time.value;
+      if (camera && camera.matrixWorld) {
+        u.lookCenter.value.setFromMatrixPosition(camera.matrixWorld);
+      }
+      var w = WEATHER[weather.to];
+      var wantedKind = w.precip || null;
+      // One kind of particle at a time: the old kind fades out before the new one fades in.
+      if (live.precipKind !== wantedKind && live.precipAmount <= 0.01) {
+        live.precipKind = wantedKind;
+        if (wantedKind) applyPrecipStyle(wantedKind);
+      }
+      var target = wantedKind && live.precipKind === wantedKind ? (w.amount || 1) : 0;
+      var rate = dt / Math.max(0.5, weather.over * 0.5);
+      if (live.precipAmount < target) live.precipAmount = Math.min(target, live.precipAmount + rate);
+      else if (live.precipAmount > target) live.precipAmount = Math.max(target, live.precipAmount - rate);
+      var amount = clamp(live.precipAmount, 0, 1);
+      var style = live.precipStyle;
+      u.lookAlpha.value = style ? style.alpha * amount : 0;
+      if (style) {
+        // Night rain is dark rain: the drops follow the sky's brightness.
+        var light = lerp(0.35, 1, clamp(luma(row, HORIZON) / Math.max(palette.dayLuma, 1e-3), 0, 1));
+        var c = look3d.hexToLinear(style.color);
+        u.lookColor.value.setRGB(c[0] * light, c[1] * light, c[2] * light);
+      }
+      live.precip.geometry.instanceCount = Math.max(1, Math.round(live.precipMax * amount));
+    }
+
+    function retune() {
+      var material = live.material;
+      if (material) {
+        var q = SKY_QUALITY[tierName()];
+        if (material.defines.SKY_QUALITY !== q) {
+          material.defines.SKY_QUALITY = q;
+          material.needsUpdate = true;
+        }
+      }
+      if (live.precip && live.precipMax !== PRECIP_COUNT[tierName()]) {
+        scene.remove(live.precip);
+        live.precip.geometry.dispose();
+        var kept = { kind: live.precipKind, amount: live.precipAmount };
+        live.precipMat.dispose();
+        live.precip = null;
+        makePrecip();
+        live.precipKind = kept.kind;
+        live.precipAmount = kept.amount;
+        if (kept.kind) applyPrecipStyle(kept.kind);
+        attach();
+      }
+      var wasLow = env.lowLight;
+      env.lowLight = tierName() === "low";
+      if (env.lowLight) {
+        lowLightBase();
+        if (!wasLow && state.env && state.env.lighting) scene.environment = state.env.lighting.texture;
+      } else {
+        queueBakes();
+      }
+      lastHour = -1;
+    }
+
+    function applyPrecipStyle(kind) {
+      var u = live.precipMat.uniforms;
+      var style = PRECIP[kind];
+      live.precipStyle = style;
+      u.lookBox.value.set(style.box, style.height, style.box);
+      u.lookVelocity.value.set(weather.wind.x * style.drift, -style.fall, weather.wind.z * style.drift);
+      u.lookSize.value = style.size;
+      u.lookLength.value = style.length;
+      u.lookSway.value = style.sway;
+      u.lookRound.value = style.round;
+    }
+
+    function lowLightBase() {
+      // Low tier keeps one baked sky: its brightness scales with the sky's own.
+      var v = vectorOf(state.preset, tone, exposure);
+      env.lowLightBase = 0.6 * luma(v, TOP) + 0.4 * luma(v, HORIZON);
+    }
+
+    function queueBakes() {
+      if (palette.fixed || !internals.glReady() || tierName() === "low") return;
+      env.queue = ["day", "dusk", "night"].filter(function (name) { return !env.slots[name]; });
+    }
+
+    function frame(dt, camera) {
+      counters.frames += 1;
+      clock.started = true;
+      bakeNext();
+      advance(dt);
+      var hour = shownHour();
+      var weatherMoving = weather.t < 1;
+      updateLightning(dt);
+      if (hour !== lastHour || weatherMoving || lastBlend !== weather.t) {
+        lastHour = hour;
+        lastBlend = weather.t;
+        evaluate(hour);
+        poses(hour);
+        applyLights();
+        applyEnvironment(hour);
+        applyPost();
+      } else if (hemiBoost !== lastBoost) {
+        applyLights();
+      }
+      lastBoost = hemiBoost;
+      // Clouds, stars and the sky's own values move every frame (cheap uniforms only).
+      if (live.material) {
+        applySky(hour);
+        var u = live.material.uniforms;
+        var wind = row[WIND];
+        u.cloudOffset.value.x = (u.cloudOffset.value.x + weather.wind.x * wind * 0.004 * dt) % 1000;
+        u.cloudOffset.value.y = (u.cloudOffset.value.y + weather.wind.z * wind * 0.004 * dt) % 1000;
+        u.flash.value = lightning.amount;
+        u.flashDir.value.copy(lightning.dir);
+      }
+      applyPrecip(dt, camera);
+      // Not everything draws through a dome: a sky picture or a fake renderer keeps the colour.
+      if (live.dome) live.dome.visible = !scene.background;
+      else if (scene.background && scene.background.isColor) scene.background.setRGB(row[FOG_DIRECT], row[FOG_DIRECT + 1], row[FOG_DIRECT + 2]);
+      report(hour);
+    }
+
+    function report(hour) {
+      if (!ctx.status) return;
+      var s = ctx.status.sky || (ctx.status.sky = {});
+      s.version = ATMOSPHERE_VERSION;
+      s.hour = hour;
+      s.phase = clock.phase;
+      s.day = clock.day;
+      s.running = clock.running;
+      s.weather = weather.to;
+      s.bakes = counters.bakes;
+      s.blends = counters.blends;
+      s.tableBuilds = counters.tableBuilds;
+      s.frames = counters.frames;
+      s.flashes = lightning.count || 0;
+      s.flash = lightning.amount;
+      s.precip = live.precipKind;
+      s.precipAmount = live.precipAmount;
+      s.skybox = skybox.id;
+      s.quality = tierName();
+    }
+
+    // ---- skybox ----
+
+    function loadImage(url) {
+      return new Promise(function (resolve) {
+        var img = document.createElement("img");
+        img.crossOrigin = "anonymous";
+        img.onload = function () { resolve(img); };
+        img.onerror = function () { resolve(null); };
+        img.src = url;
+      });
+    }
+
+    function setSkybox(id) {
+      if (id === null || id === undefined || id === false) {
+        skybox.id = null;
+        skybox.entry = null;
+        skybox.wanted = 0;
+        return;
+      }
+      id = String(id);
+      var entry = SKY_LIBRARY[id];
+      if (!entry) { warn('unknown sky "' + id + '"'); return; }
+      if (skybox.id === id) return;
+      skybox.id = id;
+      skybox.entry = entry;
+      skybox.wanted = 0;
+      if (skybox.cube) { skybox.cube.dispose(); skybox.cube = null; }
+      if (skybox.env) { skybox.env.dispose(); skybox.env = null; }
+      if (!internals.glReady()) return;
+      var base = kit.libraryBase + "/textures/";
+      var loading = id;
+      Promise.all(["px", "nx", "py", "ny", "pz", "nz"].map(function (face, index) {
+        return loadImage(base + id + "_" + face + "." + entry.files[index] + ".webp");
+      })).then(function (images) {
+        if (skybox.id !== loading || !images.every(Boolean)) return;
+        var cube = new THREE.CubeTexture(images);
+        if (THREE.SRGBColorSpace) cube.colorSpace = THREE.SRGBColorSpace;
+        cube.generateMipmaps = true;
+        cube.minFilter = THREE.LinearMipmapLinearFilter;
+        cube.needsUpdate = true;
+        skybox.cube = cube;
+        if (live.material) {
+          live.material.uniforms.skybox.value = cube;
+          // Photos are on-screen colours already: scale them so the tone curve gives them back.
+          var mid = radiance(tone, exposure, 0x808080)[1] / GREY_LINEAR;
+          live.material.uniforms.skyboxGain.value = clamp(mid, 0.7, 2.5);
+        }
+        skybox.wanted = 1;
+      });
+    }
+
+    function skyboxTick(dt, hour) {
+      if (!skybox.id) { skybox.wanted = 0; }
+      else if (skybox.cube) {
+        var entry = skybox.entry;
+        var gap = Math.abs(arc(hour, entry.hour));
+        // A cycle shows the photo around its own time of day, the live sky the rest of the time.
+        skybox.wanted = clock.running ? 1 - smooth(2.5, 4, gap) : 1;
+      }
+      if (skybox.mix !== skybox.wanted) {
+        var step = dt / 1.2;
+        skybox.mix = skybox.mix < skybox.wanted ? Math.min(skybox.wanted, skybox.mix + step) : Math.max(skybox.wanted, skybox.mix - step);
+        lastHour = -1;
+      }
+      if (skybox.cube && !skybox.env && skybox.mix > 0.02 && internals.glReady() && typeof THREE.PMREMGenerator === "function") {
+        try {
+          var generator = new THREE.PMREMGenerator(renderer);
+          skybox.env = generator.fromCubemap(skybox.cube);
+          generator.dispose();
+          counters.bakes += 1;
+        } catch (error) {
+          warn("sky light unavailable", error);
+        }
+      }
+    }
+
+    // ---- engage ----
+
+    function start() {
+      rebuildPalette();
+      if (FIXED[state.id]) weather.to = weather.from = "clear";
+      makeNoise();
+      attach();
+      takeBackground();
+      if (!state.fog && !state.preset.room) {
+        state.fog = new THREE.Fog(0xffffff, 800, 2000);
+        scene.fog = state.fog;
+      }
+      env.lowLight = tierName() === "low";
+      if (env.lowLight) lowLightBase();
+      queueBakes();
+      setPhase(shownHour(), true);
+      evaluate(shownHour());
+      poses(shownHour());
+      applyLights();
+      applySky(shownHour());
+      applyEnvironment(shownHour());
+      applyPost();
+    }
+
+    function releaseSkyLight() {
+      Object.keys(env.slots).forEach(function (name) { env.slots[name].dispose(); });
+      env.slots = {};
+      if (env.target) { env.target.dispose(); env.target = null; }
+      env.lastA = env.lastB = null;
+      env.lastT = -1;
+      if (skybox.env) { skybox.env.dispose(); skybox.env = null; }
+    }
+
+    var controller = {
+      frame: function (dt, camera) {
+        try {
+          frame(Number.isFinite(dt) ? dt : 0.016, camera);
+          skyboxTick(Number.isFinite(dt) ? dt : 0.016, shownHour());
+        } catch (error) {
+          warn("sky update failed", error);
+        }
+      },
+      fog: fogTick,
+      // applyLook ran again for the same look (a restart): the live sky goes back in.
+      reattach: function () {
+        attach();
+        takeBackground();
+        if (scene.environment && env.target && !skybox.env && !palette.fixed) scene.environment = env.target.texture;
+        if (!state.fog && !state.preset.room) {
+          state.fog = new THREE.Fog(0xffffff, 800, 2000);
+          scene.fog = state.fog;
+        }
+      },
+      tierChanged: function () { try { retune(); } catch (error) { warn("sky tier failed", error); } },
+      stop: function () {
+        clock.running = false;
+        [live.dome, live.precip].forEach(function (mesh) {
+          if (mesh && mesh.parent) mesh.parent.remove(mesh);
+          if (mesh) {
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+          }
+        });
+        live.dome = live.precip = live.material = live.precipMat = null;
+        if (live.noise) { live.noise.dispose(); live.noise = null; }
+        releaseSkyLight();
+        if (env.quad) {
+          env.quad.material.dispose();
+          env.quad = null;
+        }
+        if (skybox.cube) { skybox.cube.dispose(); skybox.cube = null; }
+      },
+      time: function (hour, options) {
+        if (hour === undefined) return shownHour();
+        var wanted = typeof hour === "string" ? TIME_NAMES[hour.trim().toLowerCase()] : Number(hour);
+        if (!Number.isFinite(wanted)) { warn('unknown time "' + hour + '"'); return shownHour(); }
+        wanted = wrapHour(wanted);
+        var over = options && options.over !== undefined ? clamp(num(options.over, 0), 0, 30) : null;
+        var from = shownHour();
+        var delta = arc(from, wanted);
+        var instant = over === 0 || !clock.started || over === null && Math.abs(delta) < 0.5;
+        clock.hour = wanted;
+        if (instant) {
+          clock.offset = 0; clock.t = 1;
+        } else {
+          clock.offset = -delta;
+          clock.over = over === null ? 1.5 : Math.max(0.05, over);
+          clock.t = 0;
+        }
+        lastHour = -1;
+        if (!clock.started) setPhase(shownHour(), true);
+        return shownHour();
+      },
+      cycle: function (options) {
+        if (options === undefined) {
+          return { running: clock.running, hour: shownHour(), phase: clock.phase, day: clock.day, dayLength: clock.dayLength, nightLength: clock.nightLength };
+        }
+        if (options === false) { clock.running = false; return controller.cycle(); }
+        options = options && typeof options === "object" ? options : {};
+        clock.dayLength = clamp(num(options.dayLength, clock.dayLength), 2, 3600);
+        clock.nightLength = clamp(num(options.nightLength, options.dayLength !== undefined ? clock.dayLength : clock.nightLength), 2, 3600);
+        if (options.start !== undefined) controller.time(options.start, { over: 0 });
+        if (typeof options.onPhase === "function") clock.onPhase = options.onPhase;
+        if (options.looks && typeof options.looks === "object") setLooks(options.looks);
+        clock.running = options.paused !== true;
+        return controller.cycle();
+      },
+      weather: function (id, options) {
+        if (id === undefined) return weather.to;
+        id = String(id).toLowerCase();
+        if (WEATHER_IDS.indexOf(id) < 0) { warn('unknown weather "' + id + '"'); return weather.to; }
+        if (FIXED[state.id] && id !== "clear") { warn('the look "' + state.id + '" has no weather'); return weather.to; }
+        if (options && typeof options.onLightning === "function") lightning.onFlash = options.onLightning;
+        if (id === weather.to) return weather.to;
+        var over = clamp(num(options && options.over, clock.started ? 4 : 0), 0, 60);
+        if (over <= 0.01 || !clock.started) {
+          weather.from = weather.to = id;
+          weather.t = 1;
+          if (live.precip) { live.precipAmount = 0; live.precipKind = null; }
+        } else {
+          weather.from = weather.to;
+          weather.to = id;
+          weather.over = over;
+          weather.t = 0;
+        }
+        lightning.next = 5 + Math.random() * 6;
+        lastHour = -1;
+        return weather.to;
+      },
+      skybox: setSkybox,
+      configure: configure,
+      get hour() { return shownHour(); },
+      get phase() { return clock.phase || phaseOf(shownHour()); },
+      get visibility() { return clamp(row[FAR] / 4, 0.1, 1); },
+      debug: function () {
+        return { row: row, counters: counters, env: env, live: live, clock: clock, weather: weather, lightning: lightning, skybox: skybox };
+      }
+    };
+
+    function setLooks(next) {
+      var clean = {};
+      ["day", "dusk", "night"].forEach(function (key) {
+        if (typeof next[key] === "string" && look3d.presets[next[key]]) clean[key] = next[key];
+      });
+      if (JSON.stringify(clean) === JSON.stringify(looks)) return;
+      looks = clean;
+      rebuildPalette();
+      if (internals.glReady() && tierName() !== "low") {
+        releaseSkyLight();
+        queueBakes();
+      }
+      lastHour = -1;
+    }
+
+    // Everything a game can tune, clamped; a repeat of the same options costs nothing.
+    function configure(options) {
+      if (!options || typeof options !== "object") return;
+      var next = Object.assign({}, tuning);
+      var changedTable = false;
+      if (options.clouds !== undefined) next.clouds = clamp(num(options.clouds, 0.5), 0, 1);
+      if (options.sunSize !== undefined) next.sunSize = clamp(num(options.sunSize, 1), 0.4, 3);
+      if (options.moon !== undefined) next.moon = options.moon !== false;
+      if (options.moonSize !== undefined) next.moonSize = clamp(num(options.moonSize, 1), 0.5, 2.5);
+      if (options.stars !== undefined) {
+        stars = clamp(num(options.stars, 1), 0, STARS_CAP);
+        next.stars = stars;
+      }
+      if (options.sun && typeof options.sun === "object") { next.sun = Object.assign({}, next.sun, options.sun); changedTable = true; }
+      var colorKeys = ["top", "horizon", "bottom", "cloud", "cloudShade"];
+      if (options.colors && typeof options.colors === "object") {
+        next.colors = Object.assign({}, next.colors);
+        ["day", "dusk", "night"].forEach(function (phase) {
+          if (options.colors[phase] && typeof options.colors[phase] === "object") {
+            next.colors[phase] = Object.assign({}, next.colors[phase], options.colors[phase]);
+            changedTable = true;
+          }
+        });
+        var flat = {};
+        colorKeys.forEach(function (key) { if (options.colors[key] !== undefined) flat[key] = options.colors[key]; });
+        if (Object.keys(flat).length) { next.colors.day = Object.assign({}, next.colors.day, flat); changedTable = true; }
+      }
+      colorKeys.forEach(function (key) {
+        if (options[key] !== undefined) {
+          next.colors = Object.assign({}, next.colors);
+          next.colors.day = Object.assign({}, next.colors.day);
+          next.colors.day[key] = options[key];
+          changedTable = true;
+        }
+      });
+      if (options.aurora !== undefined) applyAurora(options.aurora);
+      if (options.planets !== undefined) applyPlanets(options.planets);
+      if (JSON.stringify(next) !== JSON.stringify(tuning)) {
+        tuning = next;
+        if (changedTable) rebuildPalette();
+        lastHour = -1;
+      }
+      if (options.skybox !== undefined) setSkybox(options.skybox);
+      if (options.looks) setLooks(options.looks);
+      if (options.time !== undefined) controller.time(options.time, options.over !== undefined ? { over: options.over } : undefined);
+      if (options.weather !== undefined) controller.weather(options.weather, options.over !== undefined ? { over: options.over } : undefined);
+      if (options.cycle !== undefined) controller.cycle(options.cycle === true ? {} : options.cycle);
+      if (options.onLightning) lightning.onFlash = options.onLightning;
+    }
+
+    function applyAurora(value) {
+      var amount = value === true ? 1 : value === false ? 0 : clamp(num(value && value.amount !== undefined ? value.amount : value, 0), 0, 1.4);
+      if (!live.material) return;
+      live.material.uniforms.aurora.value = amount;
+      if (value && typeof value === "object") {
+        var a = hexOf(value.color, null);
+        var b = hexOf(value.color2, null);
+        if (a !== null) live.material.uniforms.auroraA.value.setHex(a);
+        if (b !== null) live.material.uniforms.auroraB.value.setHex(b);
+      }
+    }
+
+    function applyPlanets(list) {
+      if (list === true) {
+        list = [
+          { at: [40, 28], size: 9, color: 0xc98a58, color2: 0xe8c79a },
+          { at: [-65, 45], size: 4, color: 0x7fa6d9, color2: 0xcfe0f2 }
+        ];
+      }
+      if (!Array.isArray(list)) list = [];
+      if (!live.material) return;
+      var u = live.material.uniforms;
+      u.planetCount.value = Math.min(list.length, 3);
+      for (var i = 0; i < u.planetCount.value; i += 1) {
+        var p = list[i] || {};
+        var az = num(p.at && p.at[0], 30 + i * 70) * DEG;
+        var el = clamp(num(p.at && p.at[1], 30), 2, 85) * DEG;
+        u.planets.value[i].set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az), clamp(num(p.size, 6), 1, 25) * DEG);
+        var c1 = hexOf(p.color, 0xc98a58);
+        var c2 = hexOf(p.color2, c1);
+        u.planetColors.value[i].setHex(c1);
+        u.planetAlts.value[i].setHex(c2);
+      }
+    }
+
+    start();
+    return controller;
+  }
+
+  // ---- ctx.look ----
+
+  function install(ctx) {
+    var look = ctx.look;
+    var internals = look._sky;
+    var atmosphere = null;
+
+    function get() {
+      var state = internals.state;
+      if (!state.preset) internals.applyLook(internals.defaultLook, {});
+      if (!state.atmosphere) {
+        atmosphere = createAtmosphere(ctx, look, internals);
+        state.atmosphere = atmosphere;
+      }
+      return state.atmosphere;
+    }
+
+    function guard(name, fn) {
+      return function () {
+        try {
+          return fn.apply(null, arguments);
+        } catch (error) {
+          internals.warn(name + " failed", error);
+          return look;
+        }
+      };
+    }
+
+    look.weathers = WEATHER_IDS.slice();
+    look.skies = Object.keys(SKY_LIBRARY);
+    look.times = Object.keys(TIME_NAMES);
+    look.time = guard("time", function (hour, options) {
+      if (hour === undefined) return internals.state.atmosphere ? internals.state.atmosphere.hour : null;
+      get().time(hour, options);
+      return look;
+    });
+    look.cycle = guard("cycle", function (options) {
+      if (options === undefined && !internals.state.atmosphere) return { running: false };
+      var a = get();
+      if (options === undefined) return a.cycle();
+      a.cycle(options);
+      return look;
+    });
+    look.weather = guard("weather", function (id, options) {
+      if (id === undefined) return internals.state.atmosphere ? internals.state.atmosphere.weather() : "clear";
+      get().weather(id, options);
+      return look;
+    });
+    look.skybox = guard("skybox", function (id) { get().skybox(id); return look; });
+    look.sky = guard("sky", function (options) { get().configure(options); return look; });
+    Object.defineProperty(look, "hour", { get: function () { return internals.state.atmosphere ? internals.state.atmosphere.hour : null; } });
+    Object.defineProperty(look, "phase", { get: function () { return internals.state.atmosphere ? internals.state.atmosphere.phase : null; } });
+    Object.defineProperty(look, "visibility", { get: function () { return internals.state.atmosphere ? internals.state.atmosphere.visibility : 1; } });
+  }
+
+  kit.extend(function (ctx, info) {
+    if (!info || info.renderer !== "three" || !ctx || !ctx.look || !ctx.look._sky) return;
+    look3d = kit.look3d;
+    install(ctx);
+  });
+
+  // What tests and tools read.
+  kit.look3dSky = {
+    version: ATMOSPHERE_VERSION,
+    weathers: WEATHER_IDS,
+    times: TIME_NAMES,
+    skies: SKY_LIBRARY,
+    noise: makeNoiseData,
+    tier: { precipitation: PRECIP_COUNT, quality: SKY_QUALITY },
+    // A row of numbers for (look, hour, weather), named: what the calibration tests measure.
+    state: function (lookId, hour, weatherId, options) {
+      look3d = kit.look3d;
+      var preset = look3d.presets[lookId];
+      var opts = options || {};
+      var palette = resolvePalette(lookId, opts.looks || {}, opts.tuning || {}, preset.tone, preset.exposure);
+      var table = buildTable(palette, weatherId || "clear", preset.tone, preset.exposure);
+      var row = new Float32Array(FIELDS);
+      tableInto(table, hour, row);
+      var pose = elevations(wrapHour(hour), palette.path);
+      function rgb(at) { return [row[at], row[at + 1], row[at + 2]]; }
+      return {
+        tone: preset.tone,
+        exposure: preset.exposure,
+        fixed: palette.fixed,
+        elevation: pose.light,
+        sunElevation: pose.sun,
+        sun: { color: rgb(SUN_LIGHT), intensity: row[SUN_I], shadow: row[SHADOW] },
+        hemi: { sky: rgb(HEMI_SKY), intensity: row[HEMI_I] },
+        sky: { top: rgb(TOP), horizon: rgb(HORIZON), bottom: rgb(BOTTOM), cloud: rgb(CLOUD), cloudShade: rgb(CLOUD_SHADE), glowTint: rgb(GLOW_TINT), sun: rgb(SUN_DISC), curve: row[CURVE], clouds: row[CLOUDS], glow: row[GLOW], glowAmount: row[GLOW_AMOUNT], stars: row[STARS], grey: row[GREY] },
+        env: row[ENV],
+        bloom: { strength: row[BLOOM_S], threshold: row[BLOOM_T] },
+        fog: { near: row[NEAR], far: row[FAR], density: row[DENSITY] }
+      };
+    }
+  };
 })();
 
 /* DIY model library (three.js): rigged, animated library models in one line.
@@ -4967,13 +6893,15 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       return entry || null;
     }
 
-    // { lod: 1 } picks the far version a model comes with (entry.lod1); the model otherwise.
+    // { lod: 1 } picks the far version a model comes with (entry.lod1); { view: true } a weapon's
+    // first-person version with its hands (entry.view); the model otherwise.
     function lodOf(entry, options) {
+      if (entry && entry.view && options && options.view) return 2;
       return entry && entry.lod1 && options && Number(options.lod) === 1 ? 1 : 0;
     }
 
     function pathOf(entry, lod) {
-      return lod === 1 ? entry.lod1 : entry.path;
+      return lod === 2 ? entry.view : lod === 1 ? entry.lod1 : entry.path;
     }
 
     function info(h) {
@@ -5055,6 +6983,8 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       readPosition(h.object.position, options.position);
       h.object.rotation.set(0, typeof options.rotationY === "number" ? options.rotationY : 0, 0);
       h.object.visible = true;
+      // { ground: false } keeps each clip's own height off the ground (feet() below).
+      h._ground = options.ground !== false;
       if (options.colors) h._colors = Object.assign({}, options.colors);
       if (options.add !== false && ctx.scene) ctx.scene.add(h.object);
     }
@@ -5302,6 +7232,8 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       var model = built || lib.cloneScene(record);
       model.name = "model-" + h.id + "-mesh";
       h.model = model;
+      h._record = record;
+      h._baseY = model.position.y;
       h._clips = record.clips.slice();
       h._actions = {};
       h.mixer = new THREE.AnimationMixer(model);
@@ -5398,7 +7330,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     function spawnModel(id, options) {
       var entry = data(id);
       var lod = lodOf(entry, options);
-      var poolKey = lod ? id + "#lod1" : id;
+      var poolKey = lod ? id + (lod === 2 ? "#view" : "#lod1") : id;
       var pool = pools[poolKey];
       var h;
       if (pool && pool.length) {
@@ -5441,6 +7373,135 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       if (active.indexOf(h) >= 0) active.splice(active.indexOf(h), 1);
       var poolKey = h._pool || h.id;
       if (h.ready && !h._parts) (pools[poolKey] = pools[poolKey] || []).push(h);
+    }
+
+    // ---- feet on the ground: library clips sit the body at different heights (a run lifts it,
+    // a walk can sink it), so each clip's lowest point over time is measured once per model on a
+    // hidden copy, and the model is lifted or dropped by it every frame (crossfades blend it).
+    var FEET_SAMPLES = 12;
+    // A jump keeps its arc (it is lifted by its lowest moment, the take-off and landing); flying and
+    // swimming are never pulled down to the ground.
+    var ARC = { jump: 1 };
+    var AFLOAT = { fly: 1, swim: 1 };
+    var fv = new THREE.Vector3();
+
+    function probeOf(record) {
+      if (record._probe !== undefined) return record._probe;
+      record._probe = null;
+      try {
+        var root = lib.cloneScene(record);
+        root.position.set(0, 0, 0);
+        root.updateMatrixWorld(true);
+        var verts = [];
+        var lo = Infinity;
+        var hi = -Infinity;
+        var all = [];
+        root.traverse(function (o) {
+          if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+          var p = o.geometry.attributes.position;
+          for (var i = 0; i < p.count; i += 1) {
+            o.getVertexPosition(i, fv);
+            fv.applyMatrix4(o.matrixWorld);
+            all.push([o, i, fv.y]);
+            if (fv.y < lo) lo = fv.y;
+            if (fv.y > hi) hi = fv.y;
+          }
+        });
+        if (!all.length) return null;
+        // Every vertex in the bottom fifth (feet), and a spread of the rest (a body lying down).
+        var cut = lo + (hi - lo) * 0.2;
+        var stride = Math.max(1, Math.floor(all.length / 240));
+        for (var k = 0; k < all.length; k += 1) {
+          if (all[k][2] <= cut || k % stride === 0) verts.push(all[k]);
+        }
+        if (verts.length > 900) verts = verts.filter(function (_v, i) { return i % Math.ceil(verts.length / 900) === 0; });
+        record._probe = { root: root, mixer: new THREE.AnimationMixer(root), verts: verts, curves: {}, rest: lo };
+      } catch (_e) {
+        record._probe = null;
+      }
+      return record._probe;
+    }
+
+    function lowest(probe) {
+      probe.root.updateMatrixWorld(true);
+      var lo = Infinity;
+      for (var i = 0; i < probe.verts.length; i += 1) {
+        var v = probe.verts[i];
+        v[0].getVertexPosition(v[1], fv);
+        fv.applyMatrix4(v[0].matrixWorld);
+        if (fv.y < lo) lo = fv.y;
+      }
+      return lo;
+    }
+
+    // The lowest point of the model at FEET_SAMPLES + 1 moments of a clip (its own units).
+    function curveOf(probe, clip) {
+      if (probe.curves[clip.name] !== undefined) return probe.curves[clip.name];
+      var out = null;
+      try {
+        var a = probe.mixer.clipAction(clip);
+        a.reset();
+        a.setLoop(THREE.LoopRepeat, Infinity);
+        a.play();
+        out = new Float32Array(FEET_SAMPLES + 1);
+        var span = clip.duration || 0;
+        for (var i = 0; i <= FEET_SAMPLES; i += 1) {
+          probe.mixer.setTime(Math.min(span * (i / FEET_SAMPLES), Math.max(0, span - 1e-4)));
+          out[i] = lowest(probe);
+          if (!(out[i] > -Infinity && out[i] < Infinity)) { out = null; break; }
+        }
+        a.stop();
+        probe.mixer.uncacheAction(clip);
+      } catch (_e) {
+        out = null;
+      }
+      probe.curves[clip.name] = out;
+      return out;
+    }
+
+    // Where the feet stand when nothing lifts them: the idle pose (never below 0), so a model made
+    // to hover (a ghost, a fish) keeps hovering.
+    function baseOf(h, probe) {
+      if (probe.base !== undefined) return probe.base;
+      var idle = info(h).roles.idle;
+      var clip = idle ? findClip(h, idle) : null;
+      var curve = clip ? curveOf(probe, clip) : null;
+      var lo = probe.rest;
+      if (curve) { lo = Infinity; for (var i = 0; i < curve.length; i += 1) lo = Math.min(lo, curve[i]); }
+      probe.base = Math.max(0, lo);
+      return probe.base;
+    }
+
+    function feet(h) {
+      if (!h.model || !h.mixer || !h._record || !h._record.scene) return;
+      var probe = probeOf(h._record);
+      if (!probe) return;
+      var base = baseOf(h, probe);
+      var sum = 0;
+      var weights = 0;
+      var names = Object.keys(h._actions);
+      for (var i = 0; i < names.length; i += 1) {
+        var a = h._actions[names[i]];
+        var w = a.isScheduled() ? a.getEffectiveWeight() : 0;
+        if (!(w > 0) || !a.enabled) continue;
+        var clip = a.getClip();
+        var curve = curveOf(probe, clip);
+        if (!curve) continue;
+        var meta = (info(h).byName[clip.name] || {}).anim || {};
+        var low;
+        if (AFLOAT[meta.role]) low = base;
+        else if (ARC[meta.role]) { low = Infinity; for (var c = 0; c < curve.length; c += 1) low = Math.min(low, curve[c]); }
+        else {
+          var f = clip.duration > 0 ? Math.max(0, Math.min(1, a.time / clip.duration)) * FEET_SAMPLES : 0;
+          var k = Math.min(FEET_SAMPLES - 1, Math.floor(f));
+          low = curve[k] + (curve[k + 1] - curve[k]) * (f - k);
+        }
+        sum += w * low;
+        weights += w;
+      }
+      var lift = weights > 0 ? sum / weights - base : 0;
+      h.model.position.y = (h._baseY || 0) - lift;
+      h._lifted = true;
     }
 
     // ---- attachments (look level 2): things on bones, upright and at their own size. Things made
@@ -5873,6 +7934,8 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
         if (!h.ready || !h.object.visible) continue;
         if (h._moveSpeed !== null) move(h);
         if (h.mixer) h.mixer.update(dt);
+        if (h._ground && K.modelGround !== false) feet(h);
+        else if (h._lifted && h.model) { h.model.position.y = h._baseY || 0; h._lifted = false; }
         // Things put on stood upright in whatever pose the bones had (the rest pose before a
         // clip has played): after a posed frame they are placed again, once, upright in it.
         if (h._realign && h._current) {

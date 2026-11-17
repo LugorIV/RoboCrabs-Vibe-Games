@@ -53,7 +53,7 @@
     let shells = 100, lives = 100, wave = 0, waveSize = 0, leftToSpawn = 0, spawnClock = 0, waveSpawnRate = 1, moabPenalty = { pending: false };
     let running = false, active = false, ended = false, kills = 0;
     let bossMusicActive = false;
-    let waveButton = null, quiz = null, quizBeforeGameOver = false, freePlayMode = null;
+    let waveButton = null, quiz = null, freePlayMode = null;
     const endOverlay = document.getElementById("game-over"), crabFacts = window.createCrabFactDisplay(ctx), crabBadge = window.createCrabBadgeBoost(ctx);
     function layout(size) {
       W = size.width; H = size.height; boardWidth = freePlayMode && freePlayMode.active ? freePlayMode.sidebar.playWidth(size) : W;
@@ -205,7 +205,7 @@
       spawn: kind => fishSpawner.chosen(kind, { wave, routeLength, fish, start: points[0] }),
       onSend: () => { running = true; crabFacts.hide(); syncBossMusic(); }
     });
-    quiz = window.createReefQuiz(ctx, items => items ? toolbar.setItems(items) : (showBuildTools(), quizBeforeGameOver && lives <= 0 && finish()), undefined, () => crabBadge.award());
+    quiz = window.createReefQuiz(ctx, items => items ? toolbar.setItems(items) : showBuildTools(), undefined, () => crabBadge.award());
     function distanceToRoute(x, y) {
       let nearest = Infinity;
       for (let i = 1; i < points.length; i++) {
@@ -270,7 +270,7 @@
       if (escaped) {
         const escapedDamage = enemy.bossKind ? 20 : enemy.kind === 2 ? 5 : enemy.kind === 1 ? 3 : 1;
         lives = Math.max(0, lives - escapedDamage); ctx.sfx.play("creature.burble_02");
-        ctx.fx.shake(.22); quizBeforeGameOver = lives <= 0; quiz.show(); updateWaveButton();
+        ctx.fx.shake(.22); updateWaveButton();
       } else {
         bosses.pop(enemy, fish, fishViews);
         shells += 15;
@@ -281,13 +281,14 @@
       }
       syncBossMusic();
       hud();
+      if (escaped && lives <= 0) finish();
     }
-    function update(dt) {
-      if (!active || ended || (quiz && quiz.active)) return;
-      carrierMeter.update(towers);
-      heliShots.update(dt); carrierFlights.update(dt); crabFacts.update(dt);
+    function update(dt) { if (quiz) quiz.update(dt); if (!active || ended || (quiz && quiz.active)) return;
+      carrierMeter.update(towers); heliShots.update(dt); carrierFlights.update(dt); crabFacts.update(dt);
       if (ctx.input.pointer.pressed) {
-        const { x, y } = ctx.input.pointer; if (freePlayMode && freePlayMode.sidebar.handlePointer(x, y)) return;
+        const { x, y } = ctx.input.pointer;
+        if (crabFacts.handlePointer(x, y)) return;
+        if (freePlayMode && freePlayMode.sidebar.handlePointer(x, y)) return;
         const tower = towers.find(item => Math.hypot(x - item.x, y - item.y) < (item.type === "crabCarrier" ? 54 : 36));
         if (tower) {
           showUpgradeTools(tower);
@@ -314,20 +315,26 @@
         enemy.view.rotation = pos.angle;
         if (enemy.progress >= 1) {
           removeFish(enemy, true);
-          if (quiz && quiz.active) return;
+          if (ended) return;
         }
       }
       if (ended) return;
       for (const tower of towers) {
         tower.cooldown -= dt;
         if (tower.cooldown > 0) continue;
-        if (tower.type === "crabCarrier" && tower.carrierJets <= 0) continue;
         const p = tower;
         const spec = upgradeRules.statsFor(tower, W);
-        let target = null, best = Infinity;
+        let target = null, bestProgress = -Infinity, bestDistance = Infinity;
         for (const enemy of fish) {
           const d = Math.hypot(enemy.view.x - p.x, enemy.view.y - p.y);
-          if (d < spec.range && d < best) { best = d; target = enemy; }
+          if (d >= spec.range) continue;
+          // Prioritize the fish closest to escaping; use distance to break ties.
+          if (enemy.progress > bestProgress ||
+              (enemy.progress === bestProgress && d < bestDistance)) {
+            bestProgress = enemy.progress;
+            bestDistance = d;
+            target = enemy;
+          }
         }
         if (!target) continue;
         if (tower.type === "crabJet") towerViews[tower.slot].crabJet.rotation = Math.atan2(target.view.y - p.y, target.view.x - p.x);
@@ -369,7 +376,7 @@
     }
     function reset() {
       endOverlay.hidden = true;
-      shells = 100; lives = 100; wave = 0; waveSize = 0; leftToSpawn = 0; spawnClock = 0; waveSpawnRate = 1; moabPenalty.pending = false; quizBeforeGameOver = false;
+      shells = 100; lives = 100; wave = 0; waveSize = 0; leftToSpawn = 0; spawnClock = 0; waveSpawnRate = 1; moabPenalty.pending = false;
       if (freePlayMode) freePlayMode.reset(); layout(ctx.size);
       heliShots.reset(); carrierFlights.reset(); running = false; ended = false; active = true; kills = 0; crabFacts.hide(); quiz.hide(); crabBadge.reset();
       updateWaveButton();

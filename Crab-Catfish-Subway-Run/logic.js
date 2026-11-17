@@ -14,20 +14,13 @@
     const yellow = mat("#ffe78b"), pink = mat("#ff7b9a"), blue = mat("#36b8e1");
     const laneX = [-2.25, 0, 2.25];
     const movingDecor = [], obstacles = [];
-    const crabFacts = [
-      "Sharks, blue catfish, and some birds eat blue crabs. Blue crabs can also be cannibals: they sometimes eat other blue crabs.",
-      "Excess nitrogen and phosphorus runoff can spark heavy algal blooms. When algae die, bacteria break them down and use up oxygen. Low-oxygen dead zones can suffocate crabs and kill bottom-dwelling food sources like clams and worms."
-    ];
-    const quizBank = [
-      { question: "Which fish is named as a blue crab predator?", answers: ["Blue catfish", "Bluegill", "Clownfish"], correct: 0 },
-      { question: "What can excess nutrient runoff trigger?", answers: ["Heavy algal blooms", "Stronger tidal currents", "Clearer water"], correct: 0 },
-      { question: "Why can dead algae create a dead zone?", answers: ["Bacteria use up oxygen", "Salt levels rise", "Waves stop moving"], correct: 0 }
-    ];
+    const factQuestions = window.CrabFactQuestions;
     let lane = 1, height = 0, vy = 0, distance = 0, coins = 0;
+    let rightAnswers = 0, highScore = 0, shownBest = null;
     let hits = 0, speed = 13, spawnIn = 1.6, playing = false, ended = false;
-    let invuln = 0, time = 0, lastSafe = 1, movementShakeIn = 0;
-    let nextFactAt = 300, nextQuizAt = 500, factIndex = 0, quizIndex = 0;
-    let factActive = false, quizActive = false, quizToolbar = null, runToken = 0, quizzesAnswered = 0;
+    let invuln = 0, time = 0, movementShakeIn = 0;
+    let nextFactScore = 300, nextFactIndex = 0, pendingQuiz = null, activeQuiz = null;
+    let infoMode = "", quizButtons = [];
     function box(w, h, d, material, x, y, z, parent = scene) {
       const mesh = new T.Mesh(new T.BoxGeometry(w, h, d), material);
       mesh.position.set(x, y, z); parent.add(mesh); return mesh;
@@ -62,86 +55,102 @@
     const player = model("crab-runner");
     player.position.set(0, 0, 0); player.rotation.y = Math.PI;
     scene.add(player);
-    const fish = model("blue-catfish");
-    // Keep the chaser in sight without covering the lanes or the runner.
     player.scale.setScalar(.72);
-    fish.scale.setScalar(.68); fish.position.set(1.25, 0, 2.6); fish.rotation.y = Math.PI;
-    scene.add(fish);
     // A more distant high view keeps the runner visible while revealing hazards sooner.
     ctx.followCamera(player, { view: "high", distance: 17, height: 10 });
-    function scoreNow() { return Math.floor(distance) + coins * 25; }
-    function refreshHud() {
-      ctx.ui.hud.score(scoreNow());
-      ctx.ui.hud.lives(3 - hits, 3);
+
+    function clearQuizButtons() {
+      for (const button of quizButtons) if (button && button.remove) button.remove();
+      quizButtons.length = 0;
     }
-    function showFact() {
-      factActive = true;
-      const token = runToken;
-      const text = crabFacts[factIndex % crabFacts.length];
-      factIndex++;
-      // The fact card's OK button is the only way back to the run.
-      ctx.ui.howToPlay({ title: "Crab Fact!", text }).then(() => {
-        if (!factActive || token !== runToken) return;
-        factActive = false;
-        checkMilestones();
+    function startFact(fact) {
+      infoMode = "fact";
+      ctx.ui.howToPlay({
+        title: "CRAB FACT!",
+        text: fact.fact + "\n\nLearn it, then keep running!"
+      }).then(() => {
+        if (infoMode === "fact") infoMode = "";
       });
     }
-    function askQuiz() {
-      quizActive = true;
-      const token = runToken;
-      const quiz = quizBank[quizIndex % quizBank.length];
-      quizIndex++;
-      // Shuffle each question's choices so the correct option is not always first.
-      const choices = quiz.answers.map((label, index) => ({
-        label, correct: index === quiz.correct
-      }));
-      for (let i = choices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [choices[i], choices[j]] = [choices[j], choices[i]];
+    function showQuiz(q) {
+      activeQuiz = q;
+      infoMode = "quiz-choice";
+      clearQuizButtons();
+      const choices = q.answers.map((answer, i) => `${String.fromCharCode(65 + i)}) ${answer}`).join("\n");
+      const screenPromise = ctx.ui.howToPlay({
+        title: "BLUE CRAB QUIZ",
+        text: `${q.question}\n\n${choices}`
+      });
+      // Reuse the kit's instructions card and its styled buttons. The options
+      // live inside the card so they stay visible above the modal on every size.
+      const screen = document.querySelector('.diy-screen.howto');
+      const actions = screen && screen.querySelector('.diy-btns');
+      const controls = screen && screen.querySelector('.diy-howto');
+      const prompt = screen && screen.querySelector('.diy-sub');
+      if (controls) controls.remove();
+      if (prompt) prompt.style.whiteSpace = "pre-line";
+      if (actions) {
+        actions.replaceChildren();
+        for (let i = 0; i < q.answers.length; i++) {
+          quizButtons.push(ctx.ui.button(String.fromCharCode(65 + i), () => answerQuiz(i), { parent: actions }));
+        }
       }
-      ctx.ui.hud.text("crab-quiz", quiz.question);
-      quizToolbar = ctx.ui.toolbar(choices.map((choice, index) => ({
-        id: String(index), label: choice.label, icon: ""
-      })), {
-        onSelect(id) {
-          if (!quizActive || token !== runToken) return;
-          if (quizToolbar) quizToolbar.remove();
-          quizToolbar = null;
-          ctx.ui.hud.text("crab-quiz", null);
-          if (!choices[Number(id)] || !choices[Number(id)].correct) {
-            // A wrong quiz answer ends this run; Play again uses reset() for a fresh run.
-            quizActive = false;
-            ended = true;
-            playing = false;
-            ctx.music.stop({ fade: 1 });
-            ctx.ui.gameOver({ score: scoreNow() });
-            return;
-          }
-          // Keep the runner stopped after a correct answer until OK is pressed.
-          ctx.ui.howToPlay({ title: "Correct!", text: "You got it! Press OK when you're ready to run again." }).then(() => {
-            if (!quizActive || token !== runToken) return;
-            quizActive = false;
-            quizzesAnswered++;
-            if (quizzesAnswered >= 3) {
-              ended = true; playing = false;
-              ctx.music.stop({ fade: 1 });
-              ctx.ui.win({ score: scoreNow(), stars: 3 });
-            } else {
-              checkMilestones();
-            }
-          });
+      screenPromise.then(() => {
+        if (infoMode === "quiz-choice") {
+          clearQuizButtons();
+          activeQuiz = null;
+          infoMode = "";
         }
       });
     }
-    function checkMilestones() {
-      if (!playing || ended || factActive || quizActive) return;
-      const score = scoreNow();
-      if (score >= nextFactAt) {
-        nextFactAt += 300;
-        showFact();
-      } else if (score >= nextQuizAt) {
-        nextQuizAt += 200;
-        askQuiz();
+    function answerQuiz(choice) {
+      const q = activeQuiz;
+      if (!q) return;
+      activeQuiz = null;
+      clearQuizButtons();
+      ctx.ui.resume();
+      infoMode = "feedback";
+      const correct = choice === q.correct;
+      if (correct) {
+        rightAnswers++;
+        highScore = Math.max(highScore, rightAnswers);
+        refreshHud();
+      }
+      const scoreMessage = `Right answers: ${rightAnswers}\nHigh score: ${highScore}`;
+      ctx.ui.howToPlay({
+        title: correct ? "CORRECT!" : "NOT QUITE!",
+        text: correct
+          ? `Nice work! ${scoreMessage}\nKeep running for another blue crab fact!`
+          : `Remember: ${q.answers[q.correct]}.\n${scoreMessage}\nKeep going!`
+      }).then(() => {
+        if (infoMode === "feedback") infoMode = "";
+      });
+    }
+    function runProgressScore() { return Math.floor(distance) + coins * 25; }
+    function processScoreMilestones() {
+      const score = runProgressScore();
+      if (pendingQuiz && score >= pendingQuiz.dueScore) {
+        const quiz = pendingQuiz;
+        pendingQuiz = null;
+        showQuiz(quiz);
+        return true;
+      }
+      if (score >= nextFactScore) {
+        const fact = factQuestions[nextFactIndex % factQuestions.length];
+        nextFactIndex++;
+        pendingQuiz = { ...fact, dueScore: nextFactScore + 200 };
+        nextFactScore += 300;
+        startFact(fact);
+        return true;
+      }
+      return false;
+    }
+    function refreshHud() {
+      ctx.ui.hud.score(rightAnswers);
+      ctx.ui.hud.lives(3 - hits, 3);
+      if (shownBest !== highScore) {
+        ctx.setHud({ best: highScore });
+        shownBest = highScore;
       }
     }
     function clearObstacles() {
@@ -157,19 +166,15 @@
       ctx.music.play("music.pushing_ahead");
     }
     function reset() {
-      runToken++;
-      factActive = false; quizActive = false;
-      if (quizToolbar) quizToolbar.remove();
-      quizToolbar = null;
-      ctx.ui.hud.text("crab-quiz", null);
-      nextFactAt = 300; nextQuizAt = 500; factIndex = 0; quizIndex = 0;
       clearObstacles();
       for (const piece of movingDecor) piece.position.z = piece.userData.startZ;
-      lane = 1; height = 0; vy = 0; distance = 0; coins = 0; hits = 0;
-      speed = 13; spawnIn = 1.9; invuln = 0; time = 0; lastSafe = 1; movementShakeIn = 0;
+      clearQuizButtons();
+      infoMode = "";
+      lane = 1; height = 0; vy = 0; distance = 0; coins = 0; rightAnswers = 0; hits = 0;
+      speed = 13; spawnIn = 1.9; invuln = 0; time = 0; movementShakeIn = 0;
+      nextFactScore = 300; nextFactIndex = 0; pendingQuiz = null; activeQuiz = null;
       ended = false; playing = true;
       player.position.set(0, 0, 0); player.visible = true;
-      fish.position.set(1.25, 0, 2.6);
       spawnWave(-32);
       refreshHud();
       ctx.music.play("music.pushing_ahead");
@@ -217,26 +222,25 @@
       }
       // Coins mark the clear route; the nearest coin gives an early lane cue.
       for (let k = 0; k < 3; k++) addObject("coin", safe, z - 1 - k * 1.55);
-      lastSafe = safe;
     }
     function collide(o) {
       if (invuln > 0) return;
       hits++; invuln = 1.25;
       ctx.sfx.play("impact.bonk_cartoon_synth_03");
       ctx.fx.shake(.38); ctx.fx.flash();
-      fish.position.z = 2.6 - hits * .65;
       refreshHud();
       if (hits >= 3) {
         ended = true; playing = false;
-        fish.position.z = .9;
+        clearQuizButtons(); infoMode = "";
         ctx.sfx.play("water.splash_02");
         ctx.music.stop({ fade: 1 });
-        ctx.ui.gameOver({ score: Math.floor(distance) + coins * 25 });
+        ctx.ui.gameOver({ score: rightAnswers });
       }
     }
     function update(dt) {
-      if (!playing || ended || factActive || quizActive) return;
+      if (!playing || ended) return;
       dt = Math.min(dt, .05);
+      if (infoMode === "quiz" || infoMode === "quiz-choice" || infoMode === "fact" || infoMode === "feedback") return;
       time += dt;
       if (ctx.input.pressed("left") && lane > 0) {
         lane--; ctx.sfx.play("weapon.whoosh_03");
@@ -264,10 +268,6 @@
         ctx.fx.shake(.07, .13);
         movementShakeIn = .1;
       }
-      const fishTargetX = player.position.x + (hits >= 2 ? .65 : 1.25);
-      fish.position.x += (fishTargetX - fish.position.x) * Math.min(1, dt * 4);
-      fish.position.y = .18 + Math.sin(time * 7) * .13;
-      fish.rotation.z = Math.sin(time * 8) * .07;
       invuln = Math.max(0, invuln - dt);
       player.visible = invuln === 0 || Math.floor(invuln * 12) % 2 === 0;
       speed = Math.min(23, 13 + distance / 95);
@@ -308,16 +308,11 @@
         }
       }
       refreshHud();
-      if (distance >= 900 && !ended) {
-        ended = true; playing = false;
-        ctx.music.stop({ fade: 1 });
-        ctx.ui.win({ score: scoreNow(), stars: hits === 0 ? 3 : hits === 1 ? 2 : 1 });
-      }
-      checkMilestones();
+      if (ended || processScoreMilestones()) return;
     }
     spawnWave(-32);
     refreshHud();
-    ctx.ui.title({ title: "Crabway Dash", subtitle: "Swim through three underwater lanes! Jump over tiny rocks, dodge the big boulders, collect coins, and avoid the blue catfish. Reach 900 meters to win!" }).then(begin);
-    return { update, reset, onResize() {} };
+    ctx.ui.title({ title: "Original", subtitle: "Dodge rocks, jump small ones, collect coins, and answer quizzes to build your high score!" }).then(begin);
+    return { update, reset };
   } });
 })();

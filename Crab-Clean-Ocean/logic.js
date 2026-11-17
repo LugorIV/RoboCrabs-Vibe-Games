@@ -10,15 +10,18 @@
     ctx.assets.background("sunny-reef", { fit: "cover" });
     const depthTint = new PIXI.Graphics();
     const shadow = new PIXI.Graphics();
-    const crab = ctx.assets.char0979({ scale: 1 });
-    const crabBounds = crab.getLocalBounds();
-    const crabSize = Math.max(crabBounds.width, crabBounds.height) || 1;
-    crab.scale.set(68 / crabSize);
+    const characterRoster = ReefCharacterPicker.createRoster(ctx);
+    const characterChoices = characterRoster.choices, playerViews = characterRoster.views;
+    let selectedCharacter = 0;
+    let crab = playerViews[selectedCharacter];
     const CATFISH_SIZE = 360;
-    const catfish = ctx.assets.sprite("big-blue-catfish", { size: CATFISH_SIZE });
+    const catfish = ctx.assets.picture("realistic-blue-catfish", { size: CATFISH_SIZE });
     catfish.visible = false;
     let catfishFit = 1;
     const keys = ["trash-bottle", "trash-bag", "trash-can", "trash-net"];
+    const NET_KIND = keys.indexOf("trash-net");
+    const NET_HITS = 2;
+    const NET_HIT_COOLDOWN = 0.55;
     const SUNNY_LEVELS = 5;
     const LEVEL_COUNT = ReefLevelLayout.names.length;
     const LEVEL_NAMES = ReefLevelLayout.names;
@@ -27,33 +30,30 @@
     const items = Array.from({ length: MAX_LEVEL_ITEMS }, (_, i) => ({
       kind: i % keys.length,
       view: ctx.assets.sprite(keys[i % keys.length], { size: 45 }),
-      x: 0, y: 0, active: false
+      x: 0, y: 0, active: false, hits: 0, hitCooldown: 0
     }));
+    items.forEach(item => item.view.visible = false);
     const bubbles = new PIXI.Graphics();
     ctx.layers.world.addChild(depthTint);
     ctx.layers.world.addChild(shadow);
     items.forEach(item => ctx.layers.world.addChild(item.view));
-    ctx.layers.world.addChild(crab, bubbles, catfish);
+    playerViews.forEach(view => ctx.layers.world.addChild(view));
+    ctx.layers.world.addChild(bubbles, catfish);
 
     let width = ctx.size.width, height = ctx.size.height;
     let bounds = { left: 38, right: width - 38, top: 110, bottom: height - 120 };
     let x = width / 2, y = height / 2, score = 0, shells = 0, level = 1;
     let remaining = 0, total = 0, seconds = 70, playing = false;
     let elapsed = 0, movingLast = false, transition = 0, musicTrack = null;
+    let choosingCharacter = false;
     let catfishPopup = 0;
     const CATFISH_POPUP_SECONDS = 1.8;
     let previousDanger = 0;
-    const boostLevels = { speed: 0, reach: 0, time: 0, shells: 0 };
+    const boostLevels = { speed: 0, reach: 0, shells: 0, score: 0, scholar: 0, shield: 0 };
+    let shieldCharges = 0;
     let shopOpen = false;
     let quizOpen = false, quizShownThisLevel = false, quizToolbar = null;
-    const quizQuestions = [
-      { question: "Where do blue crabs often live?", choices: ["Coastal bays", "Dry deserts", "Tree tops"], answer: 0, fact: "Blue crabs live in coastal bays and estuaries." },
-      { question: "How do blue crabs usually move?", choices: ["By flying", "Sideways", "By rolling"], answer: 1, fact: "Blue crabs can scuttle sideways." },
-      { question: "What protects a crab's body?", choices: ["Soft feathers", "A hard shell", "Thick fur"], answer: 1, fact: "A hard outer shell protects a blue crab." },
-      { question: "How does a crab grow bigger?", choices: ["Molt its shell", "Stretch its claws", "Grow a beak"], answer: 0, fact: "A blue crab molts, shedding its old shell to grow." },
-      { question: "What can blue crabs use claws for?", choices: ["Catch food", "Make bubbles", "Build nests"], answer: 0, fact: "Their claws help blue crabs catch and handle food." },
-      { question: "How can we help blue crabs?", choices: ["Keep water clean", "Leave litter", "Pour oil"], answer: 0, fact: "Clean water helps blue crabs and other ocean life." }
-    ];
+    const quizQuestions = ReefQuizLayout.questions;
     const quizUi = ReefQuizLayout.createQuizUi(ctx, index => {
       if (quizOpen && quizToolbar) quizToolbar.select("answer-" + index);
     });
@@ -86,16 +86,12 @@
       ReefLevelLayout.drawDepthTint(depthTint, width, height, level, LEVEL_COUNT);
       // All items use normalized layout on a resize, so even a narrow reef stays reachable.
       ReefLevelLayout.layoutItems(items, total, level, width, bounds);
+      if (choosingCharacter) characterPicker.resize(width, height);
       if (quizOpen) quizUi.layout(quizQuestions[(level - 1) % quizQuestions.length].choices, width, height);
     }
 
     function dangerLevel() {
       return Math.ceil(level / LEVEL_COUNT * 5);
-    }
-
-    function boostStatus() {
-      return "Boosts: Swim " + boostLevels.speed + " | Reach " + boostLevels.reach +
-        " | Time " + boostLevels.time + " | Shells " + boostLevels.shells;
     }
 
     function hud() {
@@ -122,16 +118,11 @@
       onPurchase(id, cost) {
         shells -= cost;
         boostLevels[id]++;
-        const messages = {
-          speed: "Swim speed boost!",
-          reach: "Cleanup reach boost!",
-          time: "Extra time boost for the next reef!",
-          shells: "More shells for every cleanup!"
-        };
-        ctx.ui.banner(messages[id] + " Rank " + boostLevels[id] + "!", { seconds: 1.6 });
+        if (id === "shield") shieldCharges++;
+        ctx.ui.banner(ReefBoostShop.purchaseMessage(id, boostLevels[id], shieldCharges), { seconds: 1.6 });
         ctx.sfx.play("pickup.metal_clink_02", { volume: 0.55 });
         ctx.ui.hud.text("shells", "Shells: " + shells);
-        ctx.ui.hud.text("shop", boostStatus());
+        ctx.ui.hud.text("shop", ReefBoostShop.status(boostLevels, shieldCharges));
       }
     });
 
@@ -153,11 +144,17 @@
         : DEEP_REEF_ITEMS + (level - SUNNY_LEVELS - 1) * 3;
       remaining = total;
       // Later reefs add cleanup targets while keeping enough time to explore.
-      seconds = Math.min(70, Math.max(22, 40 - (level - 1) * 2) + boostLevels.time * 6);
+      const netCount = Math.max(0, Math.ceil((total - NET_KIND) / keys.length));
+      const baseSeconds = 40 - (level - 1) * 2;
+      // Each extra net hit needs time too, so keep the deeper reefs fair.
+      seconds = Math.min(70, Math.max(22, baseSeconds + netCount * 1.1));
       x = width / 2;
       y = (bounds.top + bounds.bottom) / 2;
       items.forEach((item, i) => {
         item.active = i < total;
+        item.hits = 0;
+        item.hitCooldown = 0;
+        item.view.alpha = 1;
         item.view.visible = item.active;
       });
       ReefLevelLayout.layoutItems(items, total, level, width, bounds);
@@ -178,15 +175,37 @@
       if (level > 1) ctx.sfx.play("water.splash_06", { volume: 0.55 });
     }
 
+    const characterPicker = ReefCharacterPicker.create(ctx, playerViews, characterChoices, index => {
+      selectedCharacter = index;
+      crab = playerViews[selectedCharacter];
+      choosingCharacter = false;
+      playerViews.forEach((view, i) => { view.visible = i === selectedCharacter; });
+      reset();
+    });
+
+    function openCharacterPicker() {
+      choosingCharacter = true;
+      playing = false;
+      playerViews.forEach(view => { view.visible = true; });
+      characterPicker.open(width, height);
+      ctx.ui.banner("Choose your ocean buddy!");
+    }
+
     function reset() {
       endOverlay.hidden = true;
+      playerViews.forEach((view, i) => { view.visible = i === selectedCharacter; });
+      crab = playerViews[selectedCharacter];
+      choosingCharacter = false;
       level = 1;
       score = 0;
       shells = 0;
       boostLevels.speed = 0;
       boostLevels.reach = 0;
-      boostLevels.time = 0;
       boostLevels.shells = 0;
+      boostLevels.score = 0;
+      boostLevels.scholar = 0;
+      boostLevels.shield = 0;
+      shieldCharges = 0;
       shopOpen = false;
       transition = 0;
       catfishPopup = 0;
@@ -203,11 +222,13 @@
     function collect(item) {
       item.active = false;
       item.view.visible = false;
+      item.view.alpha = 1;
       remaining--;
-      score += 10;
+      const points = 10 + boostLevels.score * 5;
+      score += points;
       shells += 10 + boostLevels.shells * 5;
       hud();
-      ctx.ui.popup("+10", item.x, item.y);
+      ctx.ui.popup("+" + points, item.x, item.y);
       ctx.fx.burst(item.x, item.y);
       ctx.sfx.play(["object.bottle_01", "object.cloth_bag_02", "pickup.metal_clink_02", "object.cloth_bag_02"][item.kind], { volume: 0.55 });
       if (remaining === 0) {
@@ -250,11 +271,16 @@
       }
       ctx.ui.hud.text("quiz", null);
       if (choice === question.answer) {
-        score += 20;
-        shells += 20 + boostLevels.shells * 10;
+        score += 20 + boostLevels.scholar * 10;
+        shells += 20 + boostLevels.shells * 10 + boostLevels.scholar * 5;
         hud();
         ctx.ui.banner("Correct! " + question.fact, { seconds: 2.5 });
         ctx.sfx.play("pickup.metal_clink_02", { volume: 0.6 });
+        playing = true;
+      } else if (shieldCharges > 0) {
+        shieldCharges--;
+        ctx.ui.banner("Bubble guard blocked the catfish! " + shieldCharges + " guard(s) left.", { seconds: 2.5 });
+        ctx.sfx.play("water.splash_06", { volume: 0.5 });
         playing = true;
       } else {
         ctx.ui.banner("Wrong answer! A huge sharp-toothed catfish lunges out!", { seconds: 2.5 });
@@ -271,7 +297,7 @@
       playing = false;
       shopOpen = true;
       ctx.ui.hud.timer(null);
-      ctx.ui.hud.text("shop", boostStatus());
+      ctx.ui.hud.text("shop", ReefBoostShop.status(boostLevels, shieldCharges));
       ctx.ui.banner("Reef cleared! Choose your boosts, then continue.", { seconds: 4 });
       boostShop.open();
     }
@@ -333,15 +359,30 @@
         return;
       }
       for (const item of items) {
-        if (item.active && Math.hypot(x - item.x, y - item.y) < 37 + boostLevels.reach * 7) {
-          collect(item);
-          if (!playing) break;
+        if (!item.active) continue;
+        item.hitCooldown = Math.max(0, item.hitCooldown - dt);
+        if (Math.hypot(x - item.x, y - item.y) >= 37 + boostLevels.reach * 7) continue;
+        if (item.kind === NET_KIND && item.hitCooldown === 0) {
+          item.hits++;
+          if (item.hits < NET_HITS) {
+            item.hitCooldown = NET_HIT_COOLDOWN;
+            item.view.alpha = 0.68;
+            ctx.ui.popup("Net 1/2", item.x, item.y);
+            ctx.sfx.play("object.cloth_bag_02", { volume: 0.4 });
+            continue;
+          }
+        } else if (item.kind === NET_KIND) {
+          continue;
         }
+        collect(item);
+        if (!playing) break;
       }
     }
 
     function render() {
-      crab.position.set(x, y + Math.sin(elapsed * 5) * (playing ? 2 : 0));
+      if (!choosingCharacter) {
+        crab.position.set(x, y + Math.sin(elapsed * 5) * (playing ? 2 : 0));
+      }
       shadow.clear().ellipse(x, y + 26, 23, 7).fill({ color: 0x1e8f9d, alpha: 0.18 });
       bubbles.clear();
       if (playing && movingLast) {
@@ -367,8 +408,8 @@
     }
 
     resize(ctx.size);
-    ctx.ui.title({ title: "Blue Crab Reef Rescue", subtitle: "Trash in the ocean can hurt or kill blue crabs. Don't litter—help keep their ocean clean as you collect trash!" })
-      .then(() => reset());
+    ctx.ui.title({ title: "Blue Crab Reef Rescue", subtitle: "Swim with the arrow keys or WASD and touch trash to clean it up. Nets take two touches—collect everything before time runs out!" })
+      .then(openCharacterPicker);
     return { update, render, reset, onResize: resize };
   } });
 })();

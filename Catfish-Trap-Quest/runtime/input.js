@@ -308,6 +308,17 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       pointer.x = event.clientX - rect.left;
       pointer.y = event.clientY - rect.top;
     }
+    // A mouse sends one pointerdown/pointerup per chord: a second button pressed or released
+    // while another is held only shows in `buttons` on pointermove, so held buttons sync from it.
+    const MOUSE_BITS = [[1, "Mouse0"], [4, "Mouse1"], [2, "Mouse2"]];
+    function syncMouse(event) {
+      if (event.pointerType !== "mouse" || typeof event.buttons !== "number") return;
+      MOUSE_BITS.forEach(function (bit) {
+        const held = (event.buttons & bit[0]) !== 0;
+        // A new press counts only while a chord that began on the game is held.
+        if (held !== down.has(bit[1]) && (!held || dragging !== null)) change(bit[1], held);
+      });
+    }
     listen(target, "pointerdown", function (event) {
       if (event.target && event.target.closest
           && event.target.closest("button,input,textarea,select,a")) return;
@@ -315,8 +326,10 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       dragging = event.pointerId;
       pointer.down = pointer.pressed = true;
       change("Mouse" + event.button, true);
+      syncMouse(event);
     });
     listen(window, "pointermove", function (event) {
+      syncMouse(event);
       const old = { x: pointer.x, y: pointer.y };
       point(event);
       if (event.pointerId === dragging) {
@@ -326,6 +339,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     });
     function pointerUp(event) {
       change("Mouse" + event.button, false);
+      syncMouse(event);
       if (event.pointerId === dragging) {
         dragging = null;
         pointer.down = false;
@@ -387,6 +401,367 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     },
     configureControls: function (config) { return this.createInput().setControls(config); },
   };
+})();
+
+/* diy-save-kit: ctx.save for game code, and a "kit" slot for the kit's own best score and
+   settings. The host page sets window.__DIY_SAVE_HOST__ before any script runs and keeps
+   the saves; with no host (previews, the boot smoke) saves last for the session only. */
+(function () {
+  const KIT = window.DIYKit = window.DIYKit || {
+    libraryBase: "https://cdn.diy.org/vibe-library/v1", extensions: [],
+    extend: function (fn) { this.extensions.push(fn); },
+  };
+  const MAIN = "main";
+  const KIT_SLOT = "kit";
+  const MAX_CHARS = 1048576;
+  const AUTOSAVE_SECONDS = 15;
+  const MIN_AUTOSAVE_SECONDS = 5;
+  const SLOT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+  const host = window.__DIY_SAVE_HOST__ || null;
+  // False when the host could not load saves: nothing may be written over them.
+  const online = Boolean(host && host.available !== false);
+  const slots = {};
+  // Saves from an earlier visit that the game has not picked up yet. A new game's
+  // state must never replace them just because the game was opened.
+  const untouched = {};
+  const status = { tracked: false, restored: false, loaded: false, writes: 0, lastBytes: 0, problems: [] };
+  let schema = 1;
+  let tracker = null;
+  let trackedSlot = MAIN;
+  let timer = 0;
+  // A restore that threw left the game half built: saving now would replace a good save.
+  let frozen = false;
+
+  window.__DIY_SAVE_STATUS__ = status;
+  Object.keys((online && host.slots) || {}).forEach(function (slot) {
+    const saved = host.slots[slot];
+    try {
+      slots[slot] = { version: saved.version, json: JSON.stringify(saved.data), savedAt: saved.savedAt || null };
+      if (slot !== KIT_SLOT) untouched[slot] = true;
+    } catch (_e) {}
+  });
+
+  function problem(code, detail) {
+    status.problems.push({ code: code, detail: String((detail && detail.message) || detail || "") });
+    if (status.problems.length > 20) status.problems.shift();
+  }
+  function gameSlot(slot) {
+    if (slot === undefined || slot === null) return MAIN;
+    if (slot === KIT_SLOT || !SLOT_NAME.test(String(slot))) {
+      problem("save_bad_slot", slot);
+      return null;
+    }
+    return String(slot);
+  }
+  function put(slot, data, version, urgent) {
+    if (data === null || data === undefined) return false;
+    let json;
+    try { json = JSON.stringify(data); } catch (error) { problem("save_not_json", error); return false; }
+    if (typeof json !== "string") { problem("save_not_json", typeof data); return false; }
+    if (json.length > MAX_CHARS) { problem("save_too_big", json.length); return false; }
+    const saved = slots[slot];
+    const changed = !saved || saved.json !== json || saved.version !== version;
+    if (changed) {
+      slots[slot] = { version: version, json: json, savedAt: new Date().toISOString() };
+      status.writes += 1;
+      status.lastBytes = json.length;
+    }
+    if (online && (changed || urgent)) {
+      try { host.write(slot, version, json, Boolean(urgent)); } catch (error) { problem("save_host_failed", error); }
+    }
+    return true;
+  }
+  function record(slot) {
+    const saved = slots[slot];
+    return saved ? { version: saved.version, data: JSON.parse(saved.json), savedAt: saved.savedAt } : null;
+  }
+  function titleOpen() {
+    const screen = KIT.ui && KIT.ui._state && KIT.ui._state.screen;
+    return Boolean(screen && (screen.name === "title" || screen.name === "howto"));
+  }
+  function flush(reason) {
+    if (!tracker || frozen || untouched[trackedSlot] || titleOpen()) return false;
+    let data;
+    try { data = tracker(reason); } catch (error) { problem("save_snapshot_failed", error); return false; }
+    return put(trackedSlot, data, schema, reason !== "interval");
+  }
+  function clear(slot) {
+    const name = gameSlot(slot);
+    if (!name) return false;
+    delete slots[name];
+    delete untouched[name];
+    if (name === MAIN) frozen = false;
+    if (online) {
+      try { host.clear(name); } catch (error) { problem("save_host_failed", error); }
+    }
+    return true;
+  }
+
+  const api = {
+    get available() { return online; },
+    version: function (n) {
+      if (Number.isInteger(n) && n >= 0) schema = n;
+      return schema;
+    },
+    has: function (slot) {
+      const name = gameSlot(slot);
+      return Boolean(name && slots[name]);
+    },
+    // The save, or null. Reading it means the game is taking it over.
+    load: function (slot) {
+      const name = gameSlot(slot);
+      if (!name) return null;
+      delete untouched[name];
+      status.loaded = true;
+      return record(name);
+    },
+    // Runs fn(data, version) on the save; true when it worked. If fn throws, the save
+    // stays as it was and nothing more is saved until the player starts a new game.
+    restore: function (fn, slot) {
+      const name = gameSlot(slot);
+      if (!name || typeof fn !== "function") return false;
+      delete untouched[name];
+      const saved = record(name);
+      if (!saved) return false;
+      try {
+        fn(saved.data, saved.version);
+        status.restored = true;
+        return true;
+      } catch (error) {
+        frozen = true;
+        problem("save_restore_failed", error);
+        return false;
+      }
+    },
+    write: function (data, slot) {
+      const name = gameSlot(slot);
+      if (!name || frozen || untouched[name]) return false;
+      return put(name, data, schema, true);
+    },
+    clear: clear,
+    // fn returns what to save, or null when there is nothing to resume.
+    track: function (fn, options) {
+      options = options || {};
+      tracker = typeof fn === "function" ? fn : null;
+      trackedSlot = gameSlot(options.slot) || MAIN;
+      status.tracked = Boolean(tracker);
+      clearInterval(timer);
+      timer = 0;
+      if (!tracker) return;
+      const seconds = Math.max(MIN_AUTOSAVE_SECONDS, Number(options.seconds) || AUTOSAVE_SECONDS);
+      timer = setInterval(function () { if (!document.hidden) flush("interval"); }, seconds * 1000);
+    },
+    // A checkpoint: level done, item bought.
+    now: function () { return flush("checkpoint"); },
+  };
+
+  function kitData() {
+    try { return slots[KIT_SLOT] ? JSON.parse(slots[KIT_SLOT].json) : {}; } catch (_e) { return {}; }
+  }
+  KIT.saves = {
+    status: status,
+    flush: flush,
+    hasGame: function () { return Boolean(slots[MAIN]); },
+    newGame: function () { clear(MAIN); },
+    kit: kitData,
+    updateKit: function (patch, urgent) {
+      return put(KIT_SLOT, Object.assign(kitData(), patch), 1, Boolean(urgent));
+    },
+    // The boot smoke reads what a game saved, to play it back.
+    peek: function (slot) { return record(slot || MAIN); },
+  };
+
+  function applySettings() {
+    const stored = kitData();
+    try { if (stored.audio && KIT.audio) KIT.audio.set(stored.audio); } catch (_e) {}
+    try { if (stored.graphics && KIT.graphics) KIT.graphics.set(stored.graphics); } catch (_e) {}
+  }
+  KIT.extend(function (ctx) {
+    ctx.save = api;
+    applySettings();
+  });
+
+  window.addEventListener("diy:ui", function (event) {
+    if (event && event.detail && event.detail.type === "pause") flush("pause");
+  });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) flush("hidden"); });
+  window.addEventListener("pagehide", function () { flush("leave"); });
+})();
+
+/* diy-leaderboard-kit: ctx.leaderboard for game code. The host page sets
+   window.__DIY_LEADERBOARD_HOST__ and sends scores to DIY with the player's own session, so the
+   game never learns who is playing. With no host (previews, the boot smoke) calls resolve empty. */
+(function () {
+  const KIT = window.DIYKit = window.DIYKit || {
+    libraryBase: "https://cdn.diy.org/vibe-library/v1", extensions: [],
+    extend: function (fn) { this.extensions.push(fn); },
+  };
+  const BOARD_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+  const MAX_BOARDS = 8;
+  const MAX_VALUE = 1e15;
+  const MAX_ROWS = 25;
+  const REQUEST_MS = 8000;
+  // A game may submit every frame; the server hears a board's new best at most this often.
+  const SEND_GAP_MS = 1500;
+  const host = window.__DIY_LEADERBOARD_HOST__ || null;
+  const boards = {};
+  const status = { submits: 0, sent: 0, reads: 0, problems: [] };
+
+  function online() {
+    return Boolean(host && host.available !== false && typeof host.request === "function");
+  }
+  function problem(code, detail) {
+    status.problems.push({ code: code, detail: String((detail && detail.message) || detail || "") });
+    if (status.problems.length > 20) status.problems.shift();
+  }
+  function boardOf(id, order) {
+    const name = String(id == null ? "" : id).trim().toLowerCase();
+    if (!BOARD_NAME.test(name)) { problem("leaderboard_bad_board", id); return null; }
+    if (!boards[name]) {
+      if (Object.keys(boards).length >= MAX_BOARDS) { problem("leaderboard_too_many_boards", name); return null; }
+      boards[name] = { name: name, order: "high", ordered: false, best: null, rank: null, pending: null,
+        sending: null, lastSentAt: 0, timer: 0, waiters: [] };
+    }
+    // A board read before its first submit learns its order from that submit.
+    const board = boards[name];
+    if ((order === "low" || order === "high") && !board.ordered) {
+      board.order = order;
+      board.ordered = true;
+    }
+    return board;
+  }
+  function better(board, a, b) {
+    if (b == null) return true;
+    return board.order === "low" ? a < b : a > b;
+  }
+  // One request to the page; it rejects on a timeout, a refusal or no host.
+  function ask(action, payload) {
+    if (!online()) return Promise.reject(new Error("offline"));
+    return new Promise(function (resolve, reject) {
+      const timer = setTimeout(function () { reject(new Error("timeout")); }, REQUEST_MS);
+      let reply;
+      try { reply = host.request(action, payload); } catch (error) { clearTimeout(timer); reject(error); return; }
+      Promise.resolve(reply).then(
+        function (data) { clearTimeout(timer); resolve(data); },
+        function (error) { clearTimeout(timer); reject(error); }
+      );
+    });
+  }
+  function result(board, improved) {
+    return { best: board.best, improved: Boolean(improved), rank: board.rank };
+  }
+  function settle(board, improved) {
+    const waiters = board.waiters.splice(0);
+    waiters.forEach(function (fn) { try { fn(result(board, improved)); } catch (_e) {} });
+  }
+  function send(board) {
+    board.timer = 0;
+    if (board.sending || board.pending == null) return;
+    const value = board.pending;
+    board.pending = null;
+    board.lastSentAt = Date.now();
+    status.sent += 1;
+    board.sending = ask("submit", { board: board.name, value: value, order: board.order }).then(function (data) {
+      const best = data && Number(data.best);
+      if (Number.isFinite(best)) board.best = best;
+      board.rank = data && Number.isInteger(data.rank) ? data.rank : board.rank;
+      return Boolean(data && data.improved);
+    }, function (error) {
+      problem("leaderboard_submit_failed", error);
+      return false;
+    }).then(function (improved) {
+      board.sending = null;
+      if (board.pending != null) schedule(board);
+      else settle(board, improved);
+    });
+  }
+  function schedule(board) {
+    if (board.timer || board.sending) return;
+    const wait = Math.max(0, board.lastSentAt + SEND_GAP_MS - Date.now());
+    board.timer = setTimeout(function () { send(board); }, wait);
+  }
+  function cleanValue(value) {
+    const number = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(number) || Math.abs(number) > MAX_VALUE) return null;
+    return number;
+  }
+
+  // Keeps the player's best; resolves { best, improved, rank } (rank is all-time, null offline).
+  function submit(id, value, options) {
+    const board = boardOf(id, options && options.order === "low" ? "low" : "high");
+    const number = cleanValue(value);
+    if (!board) return Promise.resolve(null);
+    if (number == null) { problem("leaderboard_bad_value", value); return Promise.resolve(result(board, false)); }
+    status.submits += 1;
+    const pendingBest = board.pending != null && !better(board, number, board.pending);
+    if (!better(board, number, board.best) || pendingBest) {
+      if (!board.sending && !board.timer) return Promise.resolve(result(board, false));
+      return new Promise(function (resolve) { board.waiters.push(resolve); });
+    }
+    if (!online()) {
+      board.best = number;
+      return Promise.resolve(result(board, true));
+    }
+    board.pending = number;
+    const done = new Promise(function (resolve) { board.waiters.push(resolve); });
+    schedule(board);
+    return done;
+  }
+
+  function cleanRow(row) {
+    if (!row || typeof row !== "object") return null;
+    const value = Number(row.value);
+    if (!Number.isFinite(value)) return null;
+    const avatar = typeof row.avatar === "string" && row.avatar.indexOf("https://cdn.diy.org/") === 0 ? row.avatar : null;
+    return {
+      rank: Number.isInteger(row.rank) ? row.rank : null,
+      name: String(row.name == null ? "" : row.name).slice(0, 40),
+      avatar: avatar,
+      value: value,
+      you: row.you === true,
+    };
+  }
+  // The best players: { rows: [{ rank, name, avatar, value, you }], you: { rank, value } | null }.
+  function top(id, options) {
+    options = options || {};
+    // A read sets the order only when the game names one.
+    const board = boardOf(id, options.order === "low" || options.order === "high" ? options.order : null);
+    const empty = { rows: [], you: null };
+    if (!board || !online()) return Promise.resolve(Object.assign(empty, { offline: !online() }));
+    const period = options.period === "all" ? "all" : "week";
+    const limit = Math.max(1, Math.min(MAX_ROWS, Math.round(Number(options.limit) || 10)));
+    status.reads += 1;
+    // A score still on its way is on the board the player opens.
+    const waitFor = board.pending != null || board.sending || board.timer
+      ? new Promise(function (resolve) { board.waiters.push(resolve); if (board.timer) { clearTimeout(board.timer); send(board); } })
+      : Promise.resolve();
+    return waitFor.then(function () {
+      return ask("top", { board: board.name, period: period, limit: limit });
+    }).then(function (data) {
+      const rows = (data && Array.isArray(data.rows) ? data.rows : []).map(cleanRow).filter(Boolean).slice(0, limit);
+      const you = data && data.you && Number.isFinite(Number(data.you.value))
+        ? { rank: Number.isInteger(data.you.rank) ? data.you.rank : null, value: Number(data.you.value) }
+        : null;
+      return { rows: rows, you: you };
+    }, function (error) {
+      problem("leaderboard_read_failed", error);
+      return Object.assign(empty, { offline: true });
+    });
+  }
+
+  const api = {
+    get available() { return online(); },
+    submit: submit,
+    top: top,
+  };
+  KIT.leaderboards = {
+    status: status,
+    api: api,
+    // The best this session knows: from the server once a submit came back, else local.
+    best: function (id) { const board = boards[String(id || "").toLowerCase()]; return board ? board.best : null; },
+    orderOf: function (id) { const board = boards[String(id || "").toLowerCase()]; return board ? board.order : null; },
+  };
+  KIT.extend(function (ctx) { ctx.leaderboard = api; });
 })();
 
 /* DIY game UI kit (diy-ui-kit): ctx.ui (skins, fonts, title, how-to-play, HUD, popups, pause,
@@ -611,7 +986,14 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     graphics: "Graphics", auto: "Auto", low: "Low", medium: "Medium", high: "High",
     done: "Done", gameOver: "Game over", win: "You win!", again: "Play again", next: "Next",
     best: "Best", newBest: "New best!", pause: "Pause", lives: "Lives", time: "Time",
-    score: "Score",
+    score: "Score", continueGame: "Continue", newGame: "New game", back: "Back",
+    replaceSave: "Replace your saved game?",
+    leaderboard: "Leaderboard", week: "This week", allTime: "All time", noScores: "No scores yet",
+    loading: "Loading", offline: "Scores are offline", you: "You",
+    controls: "Controls", lookSpeed: "Look speed", invertLook: "Invert look", fov: "Field of view",
+    buttonSize: "Button size", swapSides: "Swap sides", small: "Small", large: "Large",
+    lessMotion: "Less motion", softFlashes: "Softer flashes", on: "On", off: "Off",
+    lookAround: "Look around",
   };
   const RADIUS = { round: [22, 14], soft: [12, 9], square: [0, 0], pill: [28, 999] };
   const BORDER = { thick: ["4px", "solid"], thin: ["2px", "solid"], none: ["0px", "solid"],
@@ -623,6 +1005,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     "mouse:move": "touch:drag", "mouse:scroll": "touch:pinch-out", "mouse:any": "touch:tap" };
   const SHAPES = { dot: 0, star: 1, spark: 2, confetti: 3, ring: 4 };
   const POOL = 320;
+  const COLOR_KEYS = ["bg", "surface", "ink", "primary", "accent", "danger", "good"];
   const EASE = {
     linear: function (t) { return t; },
     in: function (t) { return t * t; },
@@ -648,7 +1031,9 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     tickerStopped: false, ticks: 0, lastFrameAt: 0, restarts: null, pauseEnabled: true,
     titleWaiters: [], hud: null, pops: null, banner: null, best: 0, tweens: [], shake: null,
     hitStop: 0, slow: 0, slowScale: 1, particles: null, fxCanvas: null, listeners: [],
-    origOnUpdate: null, origOffUpdate: null, gated: null, snapScore: false, docks: {},
+    origOnUpdate: null, origOffUpdate: null, gated: null, snapScore: false, docks: {}, titleOptions: null,
+    settings: {}, settingOrder: [], values: {}, sawMusic: false, settingsFrom: null,
+    look: { used: false, declared: null, target: null, locked: false, readsY: false, exitBy: null, exit: null, clicks: null },
   };
 
 
@@ -677,7 +1062,16 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     try { return Boolean(window.matchMedia && window.matchMedia(query).matches); } catch (_e) { return false; }
   }
   function isTouch() { return media("(pointer: coarse)"); }
-  function reducedMotion() { return media("(prefers-reduced-motion: reduce)"); }
+  function prefersLessMotion() { return media("(prefers-reduced-motion: reduce)"); }
+  // The player's Less motion / Softer flashes settings, else the device's own preference.
+  function reducedMotion() {
+    const value = S.values.lessMotion;
+    return typeof value === "boolean" ? value : prefersLessMotion();
+  }
+  function softFlashes() {
+    const value = S.values.softFlashes;
+    return typeof value === "boolean" ? value : prefersLessMotion();
+  }
   function emit(type, detail) {
     try {
       const payload = { type: type };
@@ -841,6 +1235,14 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
       },
     };
   }
+  // ctx.ui.skin(id, { colors: { bg, surface, ink, primary, accent, danger, good } }).
+  function recolor(skin, colors) {
+    if (!colors || typeof colors !== "object") return skin;
+    return Object.assign({}, skin, { c: skin.c.map(function (value, i) {
+      const wanted = colors[COLOR_KEYS[i]];
+      return typeof wanted === "string" && /^#[0-9a-f]{6}$/i.test(wanted) ? wanted : value;
+    }) });
+  }
   function applySkin(id, options) {
     options = options || {};
     const known = Object.prototype.hasOwnProperty.call(CATALOG.skins, id);
@@ -848,7 +1250,7 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     if (id != null && !known) {
       try { console.warn("[ui] unknown skin \"" + id + "\"; using " + skinId); } catch (_e) {}
     }
-    const skin = CATALOG.skins[skinId] || { d: 0, c: ["#8fd8ff", "#ffffff", "#1d2b53", "#ffc83d", "#ff6f59", "#ef3e4a", "#2fbf71"], df: "", bf: "", s: ["round", "thick", "pressed3d", "paper", "outline"] };
+    const skin = recolor(CATALOG.skins[skinId] || { d: 0, c: ["#8fd8ff", "#ffffff", "#1d2b53", "#ffc83d", "#ff6f59", "#ef3e4a", "#2fbf71"], df: "", bf: "", s: ["round", "thick", "pressed3d", "paper", "outline"] }, options.colors);
     const display = CATALOG.fonts[options.display] ? options.display : skin.df;
     const body = CATALOG.fonts[options.body] ? options.body : skin.bf;
     const built = skinVars(skin, display, body);
@@ -863,10 +1265,12 @@ window.DIYKit = window.DIYKit || { libraryBase: "https://cdn.diy.org/vibe-librar
     const root = ensureRoot();
     root.setAttribute("data-skin", skinId);
     root.setAttribute("data-dark", String(S.dark));
-    root.setAttribute("data-corners", skin.s[0]);
-    root.setAttribute("data-button", skin.s[2]);
-    root.setAttribute("data-panel", skin.s[3]);
-    root.setAttribute("data-title", skin.s[4]);
+    // A game with its own layouts styles these itself, so the skin's treatments stand aside.
+    const designed = hasDesign();
+    root.setAttribute("data-corners", designed ? "design" : skin.s[0]);
+    root.setAttribute("data-button", designed ? "design" : skin.s[2]);
+    root.setAttribute("data-panel", designed ? "design" : skin.s[3]);
+    root.setAttribute("data-title", designed ? "design" : skin.s[4]);
     Object.keys(LAYOUTS).forEach(function (part) {
       const choices = LAYOUTS[part];
       const asked = options[part];
@@ -942,9 +1346,13 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
 .diy-screen{position:absolute;inset:0;z-index:6;display:grid;place-items:center;padding:16px 16px calc(16px + env(safe-area-inset-bottom));background:var(--ui-backdrop);pointer-events:auto;overflow:auto;animation:diy-fade .2s ease-out}
 .diy-screen.title{background:var(--ui-backdrop-light);cursor:pointer}
 .diy-card{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:12px;width:min(92vw,460px);max-height:100%;overflow:auto;padding:clamp(16px,4.5vmin,28px);text-align:center;color:var(--ui-ink);background:var(--ui-surface);border:var(--ui-border-w) var(--ui-border-style) var(--ui-edge);border-radius:var(--ui-radius);box-shadow:0 8px 0 var(--ui-edge-shadow),0 18px 40px rgba(0,0,0,.35);animation:diy-rise .38s cubic-bezier(.2,1.4,.4,1);cursor:default}
-.diy-card h1,.diy-card h2{margin:0;font-family:var(--ui-display);font-weight:normal;line-height:1.02;overflow-wrap:anywhere}
-.diy-card h1{font-size:clamp(38px,12vmin,76px)}
-.diy-card h2{font-size:clamp(30px,9vmin,52px)}
+.diy-card h1,.diy-card h2,.diy-design h1,.diy-design h2{margin:0;font-family:var(--ui-display);font-weight:normal;line-height:1.02;overflow-wrap:anywhere}
+.diy-card h1,.diy-design h1{font-size:clamp(38px,12vmin,76px)}
+.diy-card h2,.diy-design h2{font-size:clamp(30px,9vmin,52px)}
+.diy-screen.designed{display:block;padding:0}
+.diy-design{position:absolute;inset:0;display:grid;place-items:center;overflow:auto;text-align:center;color:var(--ui-ink);cursor:default;animation:diy-fade .25s ease-out}
+.diy-hud-design{position:absolute;inset:0;z-index:2;pointer-events:none}
+.diy-hud-design .diy-pause{pointer-events:auto}
 .diy-tt{color:var(--ui-primary)}
 .diy-ui[data-title=outline] .diy-tt{-webkit-text-stroke:.07em var(--ui-edge-strong);paint-order:stroke fill;text-shadow:0 .07em 0 var(--ui-edge-strong),0 .14em .2em var(--ui-shadow)}
 .diy-ui[data-title=gradient] .diy-tt{background:linear-gradient(180deg,var(--ui-accent) 0%,var(--ui-primary) 72%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:.035em var(--ui-edge-strong);filter:drop-shadow(0 .06em 0 var(--ui-edge-strong))}
@@ -1029,6 +1437,31 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
 .diy-seg button{min-height:42px;min-width:44px;padding:4px 8px;border:0;border-left:2px solid var(--ui-row);background:var(--ui-surface);color:var(--ui-ink);font:600 14px var(--ui-body);cursor:pointer;pointer-events:auto}
 .diy-seg button:first-child{border-left:0}
 .diy-seg button[aria-pressed=true]{background:var(--ui-primary);color:var(--ui-on-primary)}
+.diy-set-list,.diy-howto.diy-ctl{max-height:min(56vh,440px);overflow:auto;overscroll-behavior:contain}
+.diy-set-list{display:grid;gap:10px;padding:2px}
+.diy-set-group{display:grid;gap:8px}
+.diy-set-group+.diy-set-group{padding-top:10px;border-top:2px solid var(--ui-row)}
+.diy-set-row{min-height:44px}
+html[data-diy-touch-size=small] #vibe3-controls button{min-width:46px;min-height:46px}
+html[data-diy-touch-size=large] #vibe3-controls button{min-width:74px;min-height:74px;font-size:19px}
+html[data-diy-touch-swap=true] #vibe3-controls button[data-dir]{order:3}
+html[data-diy-touch-swap=true] #vibe3-controls button:not([data-dir]){order:1}
+.diy-ui[data-motion=less] .diy-tt,.diy-ui[data-motion=less] .diy-title-art,.diy-ui[data-motion=less] .diy-timer.urgent,.diy-ui[data-motion=less] .diy-best em,.diy-ui[data-motion=less] .diy-card,.diy-ui[data-motion=less] .diy-screen,.diy-ui[data-motion=less] .diy-design,.diy-ui[data-motion=less] .diy-star.on{animation:none!important}
+.diy-ui[data-motion=less] .diy-pop svg{display:none}
+.diy-ui[data-board=open]{z-index:2147483000}
+.diy-lb-tabs{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.diy-lb-rows{min-height:96px}
+.diy-lb{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:min(50vh,470px);overflow:auto;text-align:left}
+.diy-lb-row{display:grid;grid-template-columns:2em 34px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:44px;padding:4px 12px;border-radius:var(--ui-radius-sm);background:var(--ui-row)}
+.diy-lb-row.you{background:var(--ui-primary);color:var(--ui-on-primary)}
+.diy-lb-rank{display:grid;place-items:center;width:30px;height:30px;font:normal 20px/1 var(--ui-display)}
+.diy-lb-row[data-rank="1"] .diy-lb-rank,.diy-lb-row[data-rank="2"] .diy-lb-rank,.diy-lb-row[data-rank="3"] .diy-lb-rank{border-radius:50%;background:var(--ui-accent);color:var(--ui-on-accent)}
+.diy-lb-av{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;overflow:hidden;background:var(--ui-surface-2);color:var(--ui-ink);font:600 16px/1 var(--ui-body)}
+.diy-lb-av img{width:100%;height:100%;object-fit:cover}
+.diy-lb-name{font:600 16px/1.2 var(--ui-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diy-lb-value{font:normal 20px/1 var(--ui-display);font-variant-numeric:tabular-nums}
+.diy-lb-you{margin:0;font:600 17px/1.2 var(--ui-body)}
+.diy-lb-note{padding:20px 0}
 @media (max-width:420px){.diy-set-row{flex-wrap:wrap}.diy-set-row input[type=range]{width:100%}.diy-seg{width:100%}.diy-seg button{flex:1}}
 @media (max-height:480px){.diy-screen{padding:8px}.diy-card{gap:7px;padding:12px 16px;width:min(92vw,560px)}.diy-card h1{font-size:clamp(28px,11vmin,52px)}.diy-card h2{font-size:clamp(24px,9vmin,40px)}.diy-howto{grid-template-columns:1fr 1fr;gap:6px}.diy-howto-row{min-height:34px;padding:2px 8px}.diy-key{width:30px;height:30px}.diy-btn{min-height:42px;padding:6px 18px}.diy-title-art{max-height:16vh}}
 .diy-ui[data-hud=bar] .diy-hud{top:0;left:0;right:0;padding:6px calc(10px + env(safe-area-inset-right)) 6px calc(10px + env(safe-area-inset-left));padding-top:calc(6px + env(safe-area-inset-top));align-items:center;background:var(--ui-surface);border-bottom:var(--ui-border-w) var(--ui-border-style) var(--ui-edge);box-shadow:0 3px 0 var(--ui-shadow)}
@@ -1086,7 +1519,9 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       const style = make("style");
       style.id = "diy-ui-style";
       style.textContent = CSS;
-      (document.head || document.documentElement).appendChild(style);
+      // First in the head, so a game's own stylesheet can restyle the kit's parts.
+      const head = document.head || document.documentElement;
+      head.insertBefore(style, head.firstChild);
     }
     const root = make("div", "diy-ui");
     root.id = "diy-ui";
@@ -1106,10 +1541,18 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     root.appendChild(hud);
     root.appendChild(pops);
     root.appendChild(flash);
+    root.setAttribute("data-motion", reducedMotion() ? "less" : "full");
     (document.body || document.documentElement).appendChild(root);
     S.root = root;
     S.fxCanvas = fx;
-    S.layers = { hud: hud, left: left, center: center, right: right, pops: pops, flash: flash };
+    const hudDesign = designOf("hud");
+    let layout = null;
+    if (hudDesign) {
+      layout = make("div", "diy-hud-design");
+      layout.appendChild(hudDesign.cloneNode(true));
+      root.insertBefore(layout, pops);
+    }
+    S.layers = { hud: hud, left: left, center: center, right: right, pops: pops, flash: flash, design: layout };
     S.hud = null;
     S.pops = null;
     S.docks = {};
@@ -1253,9 +1696,29 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       try { S.ctx.app.ticker.start(); } catch (_e) {}
     }
   }
+  // ---------- game-made designs ----------
+  // <template data-ui="title"> in index.html is a game's own layout for that screen (title,
+  // pause, over, win, howto, settings) or for the hud. The kit still builds its live parts
+  // (buttons, keycaps, score) and puts each one in the [data-ui-slot] of its name; a part with
+  // no slot goes at the end, so a design changes how a menu looks, never what it does.
+  function designOf(kind) {
+    const node = document.querySelector('template[data-ui="' + kind + '"]');
+    return node && node.content ? node.content : null;
+  }
+  function hasDesign() { return Boolean(document.querySelector("template[data-ui]")); }
+  function put(body, slot, node) {
+    (body.querySelector('[data-ui-slot="' + slot + '"]') || body).appendChild(node);
+    return node;
+  }
+  function hudSlot(slot) {
+    const layout = S.layers && S.layers.design;
+    return layout ? layout.querySelector('[data-ui-slot="' + slot + '"]') : null;
+  }
   function card(kind) {
     ensureSkin();
-    const node = make("div", "diy-card " + kind);
+    const design = designOf(kind);
+    const node = make("div", (design ? "diy-design " : "diy-card ") + kind);
+    if (design) node.appendChild(design.cloneNode(true));
     node.addEventListener("click", function (event) { event.stopPropagation(); });
     return node;
   }
@@ -1274,10 +1737,13 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     options = options || {};
     ensureRoot();
     hideScreen(true);
+    // A kit screen frees a locked mouse so its buttons can be clicked.
+    releaseLock();
     const screen = make("div", "diy-screen " + name);
     screen.setAttribute("role", "dialog");
     screen.setAttribute("aria-modal", "true");
     screen.setAttribute("data-screen", name);
+    if (body.classList.contains("diy-design")) screen.classList.add("designed");
     screen.appendChild(body);
     if (options.onBackdrop) screen.addEventListener("click", options.onBackdrop);
     S.root.appendChild(screen);
@@ -1299,21 +1765,27 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     if (document.body) document.body.classList.remove("diy-ui-modal");
     const active = document.activeElement;
     if (active && current.el.contains && current.el.contains(active) && active.blur) active.blur();
+    if (typeof current.gone === "function") current.gone();
     if (!silent) {
       unfreeze();
       emit("close", { screen: current.name });
+      // Back to play (Resume and Play again are clicks): a mouse-look game gets the mouse back.
+      if (S.started && (S.look.resumeLock || S.look.declared)) requestLock();
+      S.look.resumeLock = false;
     }
     return current.name;
   }
-  function startGame() {
+  function startGame(choice) {
     const wasTitle = S.screen && (S.screen.name === "title" || S.screen.name === "howto");
     if (S.screen && wasTitle) hideScreen(false);
     else if (!S.screen) unfreeze();
     const first = !S.started;
     S.started = true;
+    if (S.look.declared) requestLock();
+    if (first && own(S.values, "fov")) applyFov(S.values.fov);
     if (S.pauseEnabled) showPauseButton();
     const waiters = S.titleWaiters.splice(0);
-    waiters.forEach(function (fn) { try { fn(); } catch (_e) {} });
+    waiters.forEach(function (fn) { try { fn(choice); } catch (_e) {} });
     try { if (KIT.audio && typeof KIT.audio.unlock === "function") KIT.audio.unlock(); } catch (_e) {}
     if (first) emit("start", {});
     return Boolean(wasTitle || waiters.length);
@@ -1347,7 +1819,9 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     const art = make("img", "diy-title-art");
     art.alt = "";
     art.hidden = true;
-    body.insertBefore(art, body.firstChild);
+    const spot = body.querySelector('[data-ui-slot="art"]');
+    if (spot) spot.appendChild(art);
+    else body.insertBefore(art, body.firstChild);
     function show() {
       const url = lookup();
       if (!url) return false;
@@ -1357,37 +1831,64 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     }
     if (!show()) setTimeout(show, 1500);
   }
+  function savedGame() { return Boolean(KIT.saves && KIT.saves.hasGame()); }
+  // Replacing a save can't be undone, so the card asks first; Back brings its buttons back.
+  function askNewGame(actions, onBack) {
+    const choices = Array.prototype.slice.call(actions.children);
+    function restore() {
+      actions.textContent = "";
+      choices.forEach(function (node) { actions.appendChild(node); });
+      onBack();
+    }
+    actions.textContent = "";
+    actions.appendChild(make("p", "diy-sub", TEXT.replaceSave));
+    actions.appendChild(button(TEXT.newGame, function () {
+      if (KIT.saves) KIT.saves.newGame();
+      startGame({ continue: false });
+    }));
+    actions.appendChild(button(TEXT.back, restore, true));
+  }
   function title(options) {
     options = options || {};
     ensureSkin();
+    if (!options.preview) S.titleOptions = options;
     if (options.pause === false) S.pauseEnabled = false;
     return new Promise(function (resolve) {
-      S.titleWaiters.push(function () {
+      S.titleWaiters.push(function (choice) {
         if (typeof options.onStart === "function") {
           try { options.onStart(); } catch (error) { setTimeout(function () { throw error; }, 0); }
         }
-        resolve();
+        resolve({ continue: Boolean(choice && choice.continue) });
       });
       // After the first start a rebuilt game goes straight back into play.
-      if ((S.started && !options.always) || smoke()) {
-        startGame();
+      if ((S.started && !options.always) || (smoke() && !options.preview)) {
+        startGame({ continue: smoke() && savedGame() });
         return;
       }
       const body = card("title");
-      body.appendChild(heading("h1", options.title || document.title || ""));
+      put(body, "title", heading("h1", options.title || document.title || ""));
       titleArt(options, body);
-      if (options.subtitle) body.appendChild(make("p", "diy-sub", options.subtitle));
+      if (options.subtitle) put(body, "subtitle", make("p", "diy-sub", options.subtitle));
       const rowOptions = { skipRestart: true, tips: options.tips };
       let rows = controlRows(rowOptions);
       let list = howToList(rows);
       list.hidden = !rows.length;
-      body.appendChild(list);
+      put(body, "controls", list);
+      const saved = savedGame();
+      let asking = false;
+      const begin = function () { if (!asking) startGame({ continue: saved }); };
       const actions = make("div", "diy-btns");
-      actions.appendChild(button(options.button || TEXT.play, function () { startGame(); }));
-      body.appendChild(actions);
+      actions.appendChild(button(saved ? TEXT.continueGame : options.button || TEXT.play, begin));
+      if (saved) {
+        actions.appendChild(button(TEXT.newGame, function () {
+          asking = true;
+          askNewGame(actions, function () { asking = false; });
+        }, true));
+      }
+      boardButton(actions, options.leaderboard);
+      put(body, "buttons", actions);
       const credits = creditsLine();
-      if (credits) body.appendChild(credits);
-      const begin = function () { startGame(); };
+      if (credits) put(body, "credits", credits);
       const screen = showScreen("title", body, { confirm: begin, onBackdrop: begin });
       // Controls declared after title() still reach the card.
       [0, 300].forEach(function (delay) {
@@ -1398,39 +1899,82 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
           rows = next;
           const fresh = howToList(rows);
           fresh.hidden = !rows.length;
-          body.replaceChild(fresh, list);
+          list.parentNode.replaceChild(fresh, list);
           list = fresh;
         }, delay);
       });
     });
   }
-  function howToPlay(options) {
+  // How to play: the game's goal (its title subtitle unless given) with its tips and controls.
+  function howToPlay(options, back) {
     options = options || {};
     ensureSkin();
     return new Promise(function (resolve) {
       if (smoke()) { resolve(); return; }
       const from = S.screen ? S.screen.name : null;
+      const remembered = S.titleOptions || {};
       const body = card("howto");
-      body.appendChild(heading("h2", options.title || TEXT.howTo));
-      const rows = controlRows({ tips: options.tips });
-      if (rows.length) body.appendChild(howToList(rows));
-      if (options.text) body.appendChild(make("p", "diy-sub", options.text));
+      put(body, "title", heading("h2", options.title || TEXT.howTo));
+      const text = options.text || remembered.howTo || remembered.subtitle;
+      if (text) put(body, "subtitle", make("p", "diy-sub", text));
+      const rows = controlRows({ tips: options.tips || remembered.tips });
+      if (rows.length) put(body, "controls", howToList(rows));
       function close() {
-        if (from === "pause") pause(true);
+        if (typeof back === "function") back();
+        else if (from === "pause") pause(true);
         else if (from === "title" || !S.started) startGame();
         else hideScreen(false);
         resolve();
       }
       const actions = make("div", "diy-btns");
       actions.appendChild(button(TEXT.ok, close));
-      body.appendChild(actions);
+      put(body, "buttons", actions);
       showScreen("howto", body, { confirm: close, cancel: close });
     });
   }
+  // Controls: every binding the game declared, as this device plays it (keys and mouse, or touch).
+  function bindingRows() {
+    const touch = isTouch();
+    let controls = [];
+    try {
+      const input = S.ctx && S.ctx.input;
+      controls = input && typeof input.getControls === "function" ? input.getControls() : [];
+    } catch (_e) {}
+    const rows = [];
+    const mouseLook = S.look.used && !touch;
+    if (mouseLook) rows.push({ text: TEXT.lookAround, keys: ["mouse:move"] });
+    controls.forEach(function (control) {
+      if (!control || !control.label) return;
+      const keys = touch ? [touchKey(control)] : (control.keys || []).slice(0, 4);
+      if (keys.length) rows.push({ text: control.label, keys: keys });
+    });
+    const pauseKey = controls.some(function (control) { return control && control.id === "pause"; });
+    if (mouseLook && !pauseKey) rows.push({ text: TEXT.pause, keys: ["Escape"] });
+    return rows;
+  }
+  function controlsPage(back) {
+    ensureSkin();
+    const from = S.screen ? S.screen.name : null;
+    const body = card("controls");
+    put(body, "title", heading("h2", TEXT.controls));
+    const list = howToList(bindingRows());
+    list.classList.add("diy-ctl");
+    put(body, "controls", list);
+    function close() {
+      if (typeof back === "function") back();
+      else if (from === "pause") pause(true);
+      else hideScreen(false);
+    }
+    const actions = make("div", "diy-btns");
+    actions.appendChild(button(TEXT.back, close));
+    put(body, "buttons", actions);
+    showScreen("controls", body, { confirm: close, cancel: close });
+  }
   function pause(force) {
     if (!force && (!S.started || S.screen || smoke())) return false;
+    hasMusic();
     const body = card("pause");
-    body.appendChild(heading("h2", TEXT.paused));
+    put(body, "title", heading("h2", TEXT.paused));
     const actions = make("div", "diy-btns");
     actions.appendChild(button(TEXT.resume, resume));
     const restart = button(TEXT.restart, null, true);
@@ -1438,15 +1982,15 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     actions.appendChild(restart);
     actions.appendChild(button(TEXT.howTo, function () { howToPlay(); }, true));
     actions.appendChild(button(TEXT.settings, function () { settings(); }, true));
-    body.appendChild(actions);
+    put(body, "buttons", actions);
     const credits = creditsLine();
-    if (credits) body.appendChild(credits);
+    if (credits) put(body, "credits", credits);
     showScreen("pause", body, { confirm: resume, cancel: resume });
     if (!force) emit("pause", {});
     return true;
   }
   function resume() {
-    if (!S.screen || ["pause", "settings", "howto"].indexOf(S.screen.name) < 0) return false;
+    if (!S.screen || ["pause", "settings", "howto", "controls"].indexOf(S.screen.name) < 0) return false;
     hideScreen(false);
     emit("resume", {});
     return true;
@@ -1456,70 +2000,353 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     const graphics = KIT.graphics;
     return graphics && typeof graphics.get === "function" && typeof graphics.set === "function" ? graphics : null;
   }
-  function settings() {
-    const from = S.screen ? S.screen.name : null;
-    const body = card("settings");
-    body.appendChild(heading("h2", TEXT.settings));
-    const audio = KIT.audio && typeof KIT.audio.get === "function" ? KIT.audio : null;
-    function slider(label, key) {
-      const row = make("label", "diy-set-row");
-      row.appendChild(make("span", "", label));
+
+  // ---------- settings ----------
+  // The list is built from what the game has; ctx.ui.settings.add() adds the game's own options.
+  // Values are kept in the kit save slot (settings[id]); sound and graphics keep their own keys.
+  const SETTING_ID = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+  const SETTING_GROUPS = ["sound", "graphics", "look", "game", "touch", "access"];
+  const SETTING_TYPES = ["slider", "toggle", "choice"];
+  const RESERVED_SETTINGS = ["sound", "music", "graphics"];
+  const MAX_GAME_SETTINGS = 12;
+  function own(object, key) { return Object.prototype.hasOwnProperty.call(object, key); }
+  function audioKit() {
+    const audio = KIT.audio;
+    return audio && typeof audio.get === "function" && typeof audio.set === "function" ? audio : null;
+  }
+  // Music shows once the game has some: playing now, or listed in its sounds.
+  function hasMusic() {
+    if (S.sawMusic) return true;
+    try {
+      const music = KIT.music;
+      const sounds = KIT.sounds && typeof KIT.sounds === "object" ? Object.keys(KIT.sounds) : [];
+      S.sawMusic = Boolean(music && ((typeof music.playing === "function" && music.playing()) ||
+        sounds.some(function (id) { return /^music\./.test(id); })));
+    } catch (_e) {}
+    return S.sawMusic;
+  }
+  function touchButtons() { return isTouch() && Boolean(document.getElementById("vibe3-controls")); }
+  function perspectiveCamera() {
+    const camera = S.ctx && S.ctx.camera;
+    return camera && camera.isPerspectiveCamera && typeof camera.updateProjectionMatrix === "function" ? camera : null;
+  }
+  function savedSettings() {
+    try {
+      const stored = KIT.saves ? KIT.saves.kit().settings : null;
+      return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+    } catch (_e) {
+      return {};
+    }
+  }
+  function choicesOf(entry) {
+    let list = entry.choices;
+    if (typeof list === "function") {
+      try { list = list(); } catch (_e) { list = []; }
+    }
+    return Array.isArray(list) ? list : [];
+  }
+  function cleanSetting(entry, value) {
+    if (entry.type === "toggle") return typeof value === "boolean" ? value : null;
+    if (entry.type === "choice") return choicesOf(entry).some(function (c) { return c.id === value; }) ? value : null;
+    if (typeof value !== "number" || !isFinite(value)) return null;
+    const steps = Math.round((clamp(value, entry.min, entry.max) - entry.min) / entry.step);
+    return clamp(Number((entry.min + steps * entry.step).toFixed(6)), entry.min, entry.max);
+  }
+  function settingEntry(spec, kit) {
+    if (!spec || typeof spec !== "object") return null;
+    const id = String(spec.id == null ? "" : spec.id);
+    const label = typeof spec.label === "string" ? spec.label.trim().slice(0, 40) : "";
+    if (!SETTING_ID.test(id) || SETTING_TYPES.indexOf(spec.type) < 0 || !label) return null;
+    const entry = {
+      id: id, label: label, type: spec.type, kit: Boolean(kit),
+      group: SETTING_GROUPS.indexOf(spec.group) >= 0 ? spec.group : "game",
+      onChange: typeof spec.onChange === "function" ? spec.onChange : null,
+      shown: kit && typeof spec.shown === "function" ? spec.shown : null,
+      read: kit ? spec.read || null : null, write: kit ? spec.write || null : null, apply: kit ? spec.apply || null : null,
+    };
+    if (spec.type === "slider") {
+      entry.min = num(spec.min, 0);
+      entry.max = num(spec.max, 1);
+      if (!(entry.max > entry.min)) return null;
+      entry.step = Math.max(num(spec.step, (entry.max - entry.min) / 100), 1e-6);
+      const value = cleanSetting(entry, num(spec.value, entry.min));
+      entry.value = value == null ? entry.min : value;
+    } else if (spec.type === "toggle") {
+      entry.value = spec.value === true;
+    } else {
+      entry.choices = typeof spec.choices === "function" ? spec.choices : (Array.isArray(spec.choices) ? spec.choices : [])
+        .map(function (c) {
+          const choice = c && typeof c === "object" ? c : { id: c };
+          return { id: choice.id, label: String(choice.label == null ? choice.id : choice.label).slice(0, 24) };
+        })
+        .filter(function (c) { return (typeof c.id === "string" || typeof c.id === "number") && c.label; })
+        .slice(0, 5);
+      const list = choicesOf(entry);
+      if (typeof entry.choices !== "function" && list.length < 2) return null;
+      entry.value = list.some(function (c) { return c.id === spec.value; }) ? spec.value : (list[0] ? list[0].id : null);
+    }
+    return entry;
+  }
+  function registerSetting(entry) {
+    if (!own(S.settings, entry.id)) S.settingOrder.push(entry.id);
+    S.settings[entry.id] = entry;
+  }
+  // True while the kit itself applies this setting (a game that registers the id takes it over).
+  function kitOwns(id) { return Boolean(S.settings[id] && S.settings[id].kit); }
+  function settingValue(id) {
+    const entry = S.settings[id];
+    if (!entry) return undefined;
+    if (entry.read) {
+      try {
+        const read = cleanSetting(entry, entry.read());
+        if (read != null) return read;
+      } catch (_e) {}
+      return entry.value;
+    }
+    return own(S.values, id) ? S.values[id] : entry.value;
+  }
+  function changeSetting(id, value, quiet) {
+    const entry = S.settings[id];
+    const clean = entry ? cleanSetting(entry, value) : null;
+    if (clean == null) return false;
+    if (entry.write) {
+      let ok = false;
+      try { ok = entry.write(clean) !== false; } catch (_e) {}
+      if (!ok) return false;
+    } else {
+      S.values[id] = clean;
+      if (KIT.saves) {
+        const stored = savedSettings();
+        stored[id] = clean;
+        KIT.saves.updateKit({ settings: stored });
+      }
+    }
+    if (entry.apply) {
+      try { entry.apply(clean); } catch (_e) {}
+    }
+    if (!quiet && entry.onChange) {
+      try { entry.onChange(clean); } catch (error) { setTimeout(function () { throw error; }, 0); }
+    }
+    return true;
+  }
+  function settingWarn(message) {
+    try { console.warn("[ui] settings.add: " + message); } catch (_e) {}
+  }
+  function addSetting(spec) {
+    const entry = settingEntry(spec, false);
+    if (!entry) {
+      settingWarn("needs an id (letters, digits, - or _), a label and type \"slider\", \"toggle\" or \"choice\" (a choice needs 2-5 choices)");
+      return null;
+    }
+    const id = entry.id;
+    if (RESERVED_SETTINGS.indexOf(id) >= 0) {
+      settingWarn('"' + id + '" is the kit\'s own; pick another id');
+      return null;
+    }
+    const old = S.settings[id];
+    const games = S.settingOrder.filter(function (key) { return S.settings[key] && !S.settings[key].kit; }).length;
+    if ((!old || old.kit) && games >= MAX_GAME_SETTINGS) {
+      settingWarn("a game can add up to " + MAX_GAME_SETTINGS + " settings");
+      return null;
+    }
+    if (old && old.kit && !(spec.group && SETTING_GROUPS.indexOf(spec.group) >= 0)) entry.group = old.group;
+    registerSetting(entry);
+    // A value picked this session or saved from an earlier visit comes back to the game.
+    const kept = own(S.values, id) ? S.values[id] : savedSettings()[id];
+    const value = kept === undefined ? null : cleanSetting(entry, kept);
+    if (value == null) delete S.values[id];
+    else {
+      S.values[id] = value;
+      if (value !== entry.value && entry.onChange) {
+        try { entry.onChange(value); } catch (error) { setTimeout(function () { throw error; }, 0); }
+      }
+    }
+    return {
+      id: id,
+      get value() { return settingValue(id); },
+      set: function (next) { return S.settings[id] === entry ? changeSetting(id, next, false) : false; },
+      remove: function () {
+        if (S.settings[id] !== entry) return;
+        if (S.kitSpecs && S.kitSpecs[id]) { S.settings[id] = settingEntry(S.kitSpecs[id], true); return; }
+        delete S.settings[id];
+        S.settingOrder = S.settingOrder.filter(function (key) { return key !== id; });
+      },
+    };
+  }
+  function visibleSettings() {
+    const order = S.settingOrder;
+    return order.map(function (id) { return S.settings[id]; }).filter(function (entry) {
+      if (!entry) return false;
+      if (!entry.shown) return true;
+      try { return Boolean(entry.shown()); } catch (_e) { return false; }
+    }).sort(function (a, b) {
+      return (SETTING_GROUPS.indexOf(a.group) - SETTING_GROUPS.indexOf(b.group)) ||
+        (order.indexOf(a.id) - order.indexOf(b.id));
+    });
+  }
+  function setAudio(key, value) {
+    const audio = audioKit();
+    if (!audio) return false;
+    const update = {};
+    update[key] = value;
+    audio.set(update);
+    if (KIT.saves) KIT.saves.updateKit({ audio: audio.get() });
+    return true;
+  }
+  function graphicsChoices() {
+    const graphics = lookGraphics();
+    const levels = graphics && Array.isArray(graphics.levels) && graphics.levels.length ? graphics.levels : ["auto", "low", "medium", "high"];
+    return levels.map(function (level) { return { id: level, label: TEXT[level] || String(level) }; });
+  }
+  function setGraphics(level) {
+    const graphics = lookGraphics();
+    if (!graphics || graphics.set(level) === false) return false;
+    if (KIT.saves) KIT.saves.updateKit({ graphics: level });
+    return true;
+  }
+  function applyFov(value) {
+    const camera = perspectiveCamera();
+    if (!camera || !kitOwns("fov")) return;
+    camera.fov = value;
+    camera.updateProjectionMatrix();
+  }
+  function htmlFlag(name, value) {
+    const html = document.documentElement;
+    if (value == null) html.removeAttribute(name);
+    else html.setAttribute(name, value);
+  }
+  // The kit's own settings; each shows only when the game has the thing it changes.
+  function defineKitSettings() {
+    S.settings = {};
+    S.settingOrder = [];
+    S.values = {};
+    S.kitSpecs = {};
+    [
+      { id: "sound", label: TEXT.sound, type: "slider", group: "sound", value: 1, step: 0.01,
+        shown: function () { return Boolean(audioKit()); },
+        read: function () { return num(audioKit().get().sfx, 1); }, write: function (v) { return setAudio("sfx", v); } },
+      { id: "music", label: TEXT.music, type: "slider", group: "sound", value: 1, step: 0.01,
+        shown: function () { return Boolean(audioKit()) && hasMusic(); },
+        read: function () { return num(audioKit().get().music, 1); }, write: function (v) { return setAudio("music", v); } },
+      { id: "graphics", label: TEXT.graphics, type: "choice", group: "graphics", value: "auto", choices: graphicsChoices,
+        shown: function () { return Boolean(lookGraphics()); },
+        read: function () { return lookGraphics().get(); }, write: setGraphics },
+      { id: "lookSpeed", label: TEXT.lookSpeed, type: "slider", group: "look", min: 0.2, max: 1.8, step: 0.05, value: 1,
+        shown: function () { return S.look.used; } },
+      { id: "invertLook", label: TEXT.invertLook, type: "toggle", group: "look", value: false,
+        shown: function () { return S.look.used && S.look.readsY; } },
+      { id: "fov", label: TEXT.fov, type: "slider", group: "look", min: 50, max: 100, step: 1, value: 70,
+        shown: function () { return S.look.used && Boolean(perspectiveCamera()); },
+        read: function () { return own(S.values, "fov") ? S.values.fov : num(perspectiveCamera().fov, 70); },
+        apply: applyFov },
+      { id: "touchSize", label: TEXT.buttonSize, type: "choice", group: "touch", value: "medium",
+        choices: [{ id: "small", label: TEXT.small }, { id: "medium", label: TEXT.medium }, { id: "large", label: TEXT.large }],
+        shown: touchButtons, apply: function (v) { htmlFlag("data-diy-touch-size", v === "medium" ? null : v); } },
+      { id: "touchSwap", label: TEXT.swapSides, type: "toggle", group: "touch", value: false,
+        shown: touchButtons, apply: function (v) { htmlFlag("data-diy-touch-swap", v ? "true" : null); } },
+      { id: "lessMotion", label: TEXT.lessMotion, type: "toggle", group: "access", value: prefersLessMotion(),
+        apply: function (v) { if (S.root) S.root.setAttribute("data-motion", v ? "less" : "full"); } },
+      { id: "softFlashes", label: TEXT.softFlashes, type: "toggle", group: "access", value: prefersLessMotion() },
+    ].forEach(function (spec) {
+      S.kitSpecs[spec.id] = spec;
+      registerSetting(settingEntry(spec, true));
+    });
+    // The player's saved choices come back with the game (field of view once play starts).
+    const saved = savedSettings();
+    S.settingOrder.forEach(function (id) {
+      const entry = S.settings[id];
+      const value = entry.write || !own(saved, id) ? null : cleanSetting(entry, saved[id]);
+      if (value == null) return;
+      S.values[id] = value;
+      if (entry.apply && id !== "fov") {
+        try { entry.apply(value); } catch (_e) {}
+      }
+    });
+  }
+  function settingRow(entry) {
+    const value = settingValue(entry.id);
+    let row;
+    if (entry.type === "slider") {
+      row = make("label", "diy-set-row");
+      row.appendChild(make("span", "", entry.label));
       const input = make("input");
       input.type = "range";
       input.min = "0";
       input.max = "100";
-      let level = 1;
-      try { level = num(audio.get()[key], 1); } catch (_e) {}
-      input.value = String(Math.round(level * 100));
+      input.step = "1";
+      input.value = String(Math.round((num(value, entry.min) - entry.min) / (entry.max - entry.min) * 100));
       input.addEventListener("input", function () {
-        const update = {};
-        update[key] = num(input.value, 100) / 100;
-        try { audio.set(update); } catch (_e) {}
+        changeSetting(entry.id, entry.min + clamp(num(input.value, 0), 0, 100) / 100 * (entry.max - entry.min));
       });
       row.appendChild(input);
-      body.appendChild(row);
-    }
-    if (audio) {
-      slider(TEXT.sound, "sfx");
-      if (KIT.music) slider(TEXT.music, "music");
-    }
-    const graphics = lookGraphics();
-    if (graphics) {
-      const row = make("div", "diy-set-row");
-      row.appendChild(make("span", "", TEXT.graphics));
+    } else {
+      row = make("div", "diy-set-row");
+      row.appendChild(make("span", "", entry.label));
+      const choices = entry.type === "toggle"
+        ? [{ id: false, label: TEXT.off }, { id: true, label: TEXT.on }] : choicesOf(entry);
       const seg = make("div", "diy-seg");
       seg.setAttribute("role", "group");
-      seg.setAttribute("aria-label", TEXT.graphics);
-      let current = "auto";
-      try { current = graphics.get(); } catch (_e) {}
-      const levels = Array.isArray(graphics.levels) && graphics.levels.length ? graphics.levels : ["auto", "low", "medium", "high"];
-      levels.forEach(function (level) {
-        const choice = make("button", "", TEXT[level] || String(level));
-        choice.type = "button";
-        choice.setAttribute("aria-pressed", String(current === level));
-        choice.addEventListener("click", function () {
-          let ok = false;
-          try { ok = graphics.set(level) !== false; } catch (_e) {}
-          if (!ok) return;
-          emit("button", { label: choice.textContent });
+      seg.setAttribute("aria-label", entry.label);
+      choices.forEach(function (choice) {
+        const node = make("button", "", choice.label);
+        node.type = "button";
+        node.setAttribute("data-choice", String(choice.id));
+        node.setAttribute("aria-pressed", String(choice.id === value));
+        node.addEventListener("click", function () {
+          if (!changeSetting(entry.id, choice.id)) return;
+          emit("button", { label: choice.label });
           Array.prototype.forEach.call(seg.children, function (other) {
-            other.setAttribute("aria-pressed", String(other === choice));
+            other.setAttribute("aria-pressed", String(other === node));
           });
         });
-        seg.appendChild(choice);
+        seg.appendChild(node);
       });
       row.appendChild(seg);
-      body.appendChild(row);
     }
+    row.setAttribute("data-setting", entry.id);
+    return row;
+  }
+  function settings(origin) {
+    const from = origin !== undefined ? origin : (S.screen ? S.screen.name : null);
+    hasMusic();
+    const body = card("settings");
+    put(body, "title", heading("h2", TEXT.settings));
+    const list = make("div", "diy-set-list");
+    let group = null;
+    visibleSettings().forEach(function (entry) {
+      if (!group || group.getAttribute("data-group") !== entry.group) {
+        group = make("div", "diy-set-group");
+        group.setAttribute("data-group", entry.group);
+        list.appendChild(group);
+      }
+      group.appendChild(settingRow(entry));
+    });
+    put(body, "options", list);
     function done() {
       if (from === "pause") pause(true);
       else hideScreen(false);
     }
+    function back() { settings(from); }
     const actions = make("div", "diy-btns");
+    const pages = make("div", "diy-btns");
+    if (bindingRows().length) pages.appendChild(button(TEXT.controls, function () { controlsPage(back); }, true));
+    pages.appendChild(button(TEXT.howTo, function () { howToPlay({}, back); }, true));
+    if (pages.children.length > 1) pages.classList.add("two");
+    actions.appendChild(pages);
     actions.appendChild(button(TEXT.done, done));
-    body.appendChild(actions);
+    put(body, "buttons", actions);
     showScreen("settings", body, { confirm: done, cancel: done });
   }
+  const settingsApi = function () { settings(); };
+  settingsApi.open = function () { settings(); };
+  settingsApi.add = addSetting;
+  settingsApi.get = function (id) { return settingValue(String(id)); };
+  settingsApi.set = function (id, value) { return changeSetting(String(id), value, false); };
+  settingsApi.list = function () {
+    return visibleSettings().map(function (entry) {
+      return { id: entry.id, label: entry.label, type: entry.type, group: entry.group, value: settingValue(entry.id) };
+    });
+  };
   // How busy the kit's own effects may be: look3d's running tier in 3D, else a device guess
   // that steps down when 2D frames run slow (Fruit Dojo's quality.js).
   function graphicsLevel() {
@@ -1567,31 +2394,36 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     ensureSkin();
     const score = options.score == null ? null : num(options.score, 0);
     // Called again every frame by a game that keeps losing: keep the card that is up.
-    if (S.screen && S.screen.name === kind && S.screen.score === score) return S.screen.el.firstChild;
+    const shown = S.screen && S.screen.under ? S.screen.under : S.screen;
+    if (shown && shown.name === kind && shown.score === score) return shown.el.firstChild;
+    // The best score from earlier visits; a new one is kept for the next.
+    const kept = KIT.saves ? num(KIT.saves.kit().best, 0) : 0;
+    S.best = Math.max(S.best, kept);
     const previous = S.best;
     let best = typeof options.best === "number" ? options.best : null;
     if (score != null) S.best = Math.max(S.best, score, best || 0);
+    if (KIT.saves && S.best > kept) KIT.saves.updateKit({ best: S.best }, true);
     if (best == null && score != null) best = S.best;
     const newBest = options.newBest === true || (score != null && score > previous && previous > 0 &&
       (typeof options.best !== "number" || options.best <= score));
     const body = card(kind);
-    body.appendChild(heading("h2", options.title || (kind === "win" ? TEXT.win : TEXT.gameOver)));
-    if (options.subtitle) body.appendChild(make("p", "diy-sub", options.subtitle));
+    put(body, "title", heading("h2", options.title || (kind === "win" ? TEXT.win : TEXT.gameOver)));
+    if (options.subtitle) put(body, "subtitle", make("p", "diy-sub", options.subtitle));
     if (options.stars != null) {
       const stars = make("div", "diy-stars");
       const count = clamp(Math.round(num(options.stars, 0)), 0, 3);
       for (let i = 0; i < 3; i += 1) stars.appendChild(starIcon(i < count, i));
-      body.appendChild(stars);
+      put(body, "stars", stars);
     }
     if (score != null) {
       const result = make("div", "diy-result", "0");
       result.setAttribute("aria-label", TEXT.score + " " + score);
-      body.appendChild(result);
+      put(body, "score", result);
       countUp(result, score);
       const line = make("p", "diy-best");
       if (newBest) line.appendChild(make("em", "", TEXT.newBest));
       if (best != null) line.appendChild(document.createTextNode(TEXT.best + " " + best));
-      body.appendChild(line);
+      put(body, "best", line);
     }
     const actions = make("div", "diy-btns" + (typeof options.next === "function" ? " two" : ""));
     const again = button(options.button || TEXT.again, function () { onRestarted(); });
@@ -1603,7 +2435,8 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
         try { options.next(); } catch (error) { setTimeout(function () { throw error; }, 0); }
       }, true));
     }
-    body.appendChild(actions);
+    boardButton(actions, options.leaderboard);
+    put(body, "buttons", actions);
     showScreen(kind, body, { confirm: function () { again.click(); } });
     S.screen.score = score;
     if (kind === "win") {
@@ -1612,6 +2445,169 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     }
     emit(kind === "win" ? "win" : "gameover", { score: score });
     return body;
+  }
+  // ---------- leaderboards ----------
+  // ctx.ui.leaderboard(board, options) shows ctx.leaderboard's board (runtime/leaderboard.js) over
+  // the screen that is up, and Back brings that screen back. Designable: slots title, tabs, rows, you, buttons.
+  function groupDigits(value) {
+    const rounded = Math.round(num(value, 0) * 100) / 100;
+    const parts = String(Math.abs(rounded)).split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return (rounded < 0 ? "-" : "") + parts.join(".");
+  }
+  function clock(seconds) {
+    const total = Math.max(0, Math.round(num(seconds, 0) * 100));
+    const secs = Math.floor((total % 6000) / 100);
+    const hundredths = total % 100;
+    return Math.floor(total / 6000) + ":" + (secs < 10 ? "0" : "") + secs + "." + (hundredths < 10 ? "0" : "") + hundredths;
+  }
+  function boardValue(value, format) {
+    if (typeof format === "function") {
+      try { return String(format(value)); } catch (_e) {}
+    }
+    return format === "time" ? clock(value) : groupDigits(value);
+  }
+  function boardAvatar(row) {
+    const node = make("span", "diy-lb-av");
+    node.setAttribute("aria-hidden", "true");
+    function letter() { node.textContent = String(row.name || "?").trim().charAt(0).toUpperCase() || "?"; }
+    if (!row.avatar) { letter(); return node; }
+    const picture = make("img");
+    picture.alt = "";
+    picture.addEventListener("error", function () { remove(picture); letter(); });
+    picture.src = row.avatar;
+    node.appendChild(picture);
+    return node;
+  }
+  function boardRows(rows, format) {
+    const list = make("ol", "diy-lb");
+    rows.forEach(function (row) {
+      const item = make("li", "diy-lb-row" + (row.you ? " you" : ""));
+      if (row.rank != null) item.setAttribute("data-rank", String(row.rank));
+      item.appendChild(make("span", "diy-lb-rank", row.rank == null ? "" : String(row.rank)));
+      item.appendChild(boardAvatar(row));
+      item.appendChild(make("span", "diy-lb-name", row.name));
+      item.appendChild(make("span", "diy-lb-value", boardValue(row.value, format)));
+      list.appendChild(item);
+    });
+    return list;
+  }
+  function segment(label, choices, current, onPick) {
+    const seg = make("div", "diy-seg");
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", label);
+    choices.forEach(function (choice) {
+      const node = make("button", "", choice.label);
+      node.type = "button";
+      node.setAttribute("data-choice", choice.id);
+      node.setAttribute("aria-pressed", String(choice.id === current));
+      node.addEventListener("click", function () {
+        emit("button", { label: choice.label });
+        Array.prototype.forEach.call(seg.children, function (other) {
+          other.setAttribute("aria-pressed", String(other === node));
+        });
+        onPick(choice.id);
+      });
+      seg.appendChild(node);
+    });
+    return seg;
+  }
+  function leaderboard(id, options) {
+    options = options || {};
+    ensureSkin();
+    const boards = KIT.leaderboards;
+    return new Promise(function (resolve) {
+      const listed = (Array.isArray(options.boards) ? options.boards : []).filter(function (entry) {
+        return entry && entry.board;
+      }).slice(0, 8);
+      const choices = listed.length ? listed : [{ board: id, label: "", format: options.format }];
+      if (smoke() || !boards || !choices[0].board) { resolve(); return; }
+      let current = choices.filter(function (entry) { return String(entry.board) === String(id); })[0] || choices[0];
+      let period = options.period === "all" ? "all" : "week";
+      let ticket = 0;
+      let closed = false;
+      const under = S.screen ? (S.screen.name === "leaderboard" ? S.screen.under : S.screen) : null;
+      if (S.screen && S.screen.name === "leaderboard") hideScreen(true);
+      if (under) { S.screen = null; remove(under.el); }
+      const body = card("leaderboard");
+      put(body, "title", heading("h2", options.title || TEXT.leaderboard));
+      const tabs = make("div", "diy-lb-tabs");
+      tabs.appendChild(segment(TEXT.leaderboard, [{ id: "week", label: TEXT.week }, { id: "all", label: TEXT.allTime }],
+        period, function (next) { period = next; load(); }));
+      if (choices.length > 1) {
+        tabs.appendChild(segment(options.title || TEXT.leaderboard, choices.map(function (entry) {
+          return { id: String(entry.board), label: String(entry.label || entry.board) };
+        }), String(current.board), function (next) {
+          current = choices.filter(function (entry) { return String(entry.board) === next; })[0] || current;
+          load();
+        }));
+      }
+      put(body, "tabs", tabs);
+      const spot = put(body, "rows", make("div", "diy-lb-rows"));
+      const you = put(body, "you", make("p", "diy-lb-you"));
+      const actions = make("div", "diy-btns");
+      actions.appendChild(button(TEXT.back, close));
+      put(body, "buttons", actions);
+      function note(text) {
+        spot.textContent = "";
+        spot.appendChild(make("p", "diy-sub diy-lb-note", text));
+      }
+      function load() {
+        const mine = ++ticket;
+        const format = current.format || options.format;
+        note(TEXT.loading);
+        you.hidden = true;
+        boards.api.top(current.board, { period: period, limit: options.limit || 10 }).then(function (data) {
+          if (mine !== ticket || closed) return;
+          if (data.rows.length) {
+            spot.textContent = "";
+            spot.appendChild(boardRows(data.rows, format));
+          } else note(data.offline ? TEXT.offline : TEXT.noScores);
+          const mineBest = data.you || (data.offline && boards.best(current.board) != null
+            ? { rank: null, value: boards.best(current.board) } : null);
+          if (!mineBest) return;
+          you.textContent = TEXT.you + (mineBest.rank ? " #" + mineBest.rank : "") + " · " + boardValue(mineBest.value, format);
+          you.hidden = false;
+        });
+      }
+      // Back, a restart or another screen: whatever takes the board down ends it once.
+      function finish() {
+        if (closed) return;
+        closed = true;
+        if (S.root) S.root.removeAttribute("data-board");
+        // Keys pressed on the board must not reach the game when it runs again.
+        try { if (S.ctx && S.ctx.input && typeof S.ctx.input.endFrame === "function") S.ctx.input.endFrame(); } catch (_e) {}
+        if (typeof options.onClose === "function") {
+          try { options.onClose(); } catch (error) { setTimeout(function () { throw error; }, 0); }
+        }
+        resolve();
+      }
+      function close() {
+        if (closed) return;
+        if (under && S.root) {
+          hideScreen(true);
+          S.root.appendChild(under.el);
+          S.screen = under;
+          if (document.body) document.body.classList.add("diy-ui-modal");
+        } else hideScreen(false);
+      }
+      showScreen("leaderboard", body, { confirm: close, cancel: close });
+      S.screen.under = under;
+      S.screen.gone = finish;
+      // Over a game's own menus too, whatever their z-index.
+      S.root.setAttribute("data-board", "open");
+      load();
+    });
+  }
+  // A "Leaderboard" button on the title and end screens: options.leaderboard is a board id or
+  // ctx.ui.leaderboard's options with { board }. Shown only where scores can be read.
+  function boardButton(actions, spec) {
+    const boards = KIT.leaderboards;
+    if (!spec || !boards || !boards.api.available) return;
+    const options = typeof spec === "object" ? spec : { board: spec };
+    const open = button(TEXT.leaderboard, function () { leaderboard(options.board, options); }, true);
+    open.setAttribute("data-action", "leaderboard");
+    actions.appendChild(open);
   }
   function countUp(node, target) {
     const started = now();
@@ -1686,8 +2682,12 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
         h.scoreBest = make("small", "");
         h.scoreBest.hidden = true;
         h.score.appendChild(h.scoreBest);
-        const row = scoreRow(h);
-        row.insertBefore(h.score, row.firstChild);
+        const spot = hudSlot("score");
+        if (spot) spot.appendChild(h.score);
+        else {
+          const row = scoreRow(h);
+          row.insertBefore(h.score, row.firstChild);
+        }
       }
       h.target = num(value, 0);
       if (S.snapScore || h.shown == null || now() - S.lastFrameAt > 250) {
@@ -1708,7 +2708,9 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       if (!h.lives) {
         h.lives = make("div", "diy-lives");
         h.lives.setAttribute("role", "img");
-        S.layers.right.insertBefore(h.lives, S.layers.right.firstChild);
+        const spot = hudSlot("lives");
+        if (spot) spot.appendChild(h.lives);
+        else S.layers.right.insertBefore(h.lives, S.layers.right.firstChild);
         h.livesShown = null;
       }
       h.lives.setAttribute("aria-label", TEXT.lives + " " + count);
@@ -1761,7 +2763,7 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
         h.timer = make("div", "diy-chip diy-timer");
         h.timer.setAttribute("role", "timer");
         h.timer.setAttribute("aria-label", TEXT.time);
-        S.layers.center.appendChild(h.timer);
+        (hudSlot("timer") || S.layers.center).appendChild(h.timer);
       }
       if (seconds == null) { h.timer.hidden = true; return null; }
       h.timer.hidden = false;
@@ -1783,7 +2785,7 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
         bar.setAttribute("role", "meter");
         bar.appendChild(make("i"));
         bar.appendChild(make("span"));
-        S.layers.left.appendChild(bar);
+        (hudSlot("bar:" + key) || hudSlot("bars") || S.layers.left).appendChild(bar);
         h.bars[key] = bar;
       }
       if (value == null) { bar.hidden = true; return null; }
@@ -1804,7 +2806,7 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       if (!h.combo) {
         h.combo = make("div", "diy-chip diy-combo");
         h.combo.hidden = true;
-        scoreRow(h).appendChild(h.combo);
+        (hudSlot("combo") || hudSlot("score") || scoreRow(h)).appendChild(h.combo);
       }
       const n = Math.round(num(count, 0));
       h.combo.hidden = n < 2;
@@ -1821,21 +2823,36 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       let chip = h.texts[key];
       if (!chip) {
         chip = make("div", "diy-chip diy-text");
-        S.layers.left.appendChild(chip);
+        (hudSlot("text:" + key) || hudSlot("bars") || S.layers.left).appendChild(chip);
         h.texts[key] = chip;
       }
       chip.hidden = value == null || value === "";
       chip.textContent = value == null ? "" : String(value);
       return chip.textContent;
     },
-    hide: function () { ensureRoot(); S.layers.hud.hidden = true; },
-    show: function () { ensureRoot(); S.layers.hud.hidden = false; },
+    hide: function () {
+      ensureRoot();
+      S.layers.hud.hidden = true;
+      if (S.layers.design) S.layers.design.hidden = true;
+    },
+    show: function () {
+      ensureRoot();
+      S.layers.hud.hidden = false;
+      if (S.layers.design) S.layers.design.hidden = false;
+    },
     clear: function () {
       ensureRoot();
       ["left", "center"].forEach(function (key) { S.layers[key].textContent = ""; });
       Array.prototype.slice.call(S.layers.right.children).forEach(function (node) {
         if (!node.classList.contains("diy-pause")) remove(node);
       });
+      if (S.layers.design) {
+        Array.prototype.forEach.call(S.layers.design.querySelectorAll("[data-ui-slot]"), function (spot) {
+          Array.prototype.slice.call(spot.children).forEach(function (node) {
+            if (!node.classList.contains("diy-pause")) remove(node);
+          });
+        });
+      }
       S.hud = null;
     },
   };
@@ -1867,7 +2884,9 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     node.setAttribute("aria-label", TEXT.pause);
     node.appendChild(make("span"));
     node.addEventListener("click", function (event) { event.stopPropagation(); pause(); });
-    if (S.layout && S.layout.pause === "top-left") S.layers.left.insertBefore(node, S.layers.left.firstChild);
+    const spot = hudSlot("pause");
+    if (spot) spot.appendChild(node);
+    else if (S.layout && S.layout.pause === "top-left") S.layers.left.insertBefore(node, S.layers.left.firstChild);
     else S.layers.right.appendChild(node);
   }
 
@@ -2247,7 +3266,7 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     const time = clamp(num(seconds, 0.25), 0.05, 2);
     node.style.transition = "none";
     node.style.background = colorString(color, "#ffffff");
-    node.style.opacity = String(clamp(num(alpha, 0.6), 0, 1) * (reducedMotion() ? 0.4 : 1));
+    node.style.opacity = String(clamp(num(alpha, 0.6), 0, 1) * (softFlashes() ? 0.35 : 1));
     void (node.getBoundingClientRect && node.getBoundingClientRect());
     node.style.transition = "opacity " + time + "s ease-out";
     node.style.opacity = "0";
@@ -2327,6 +3346,115 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       return S.slow > 0 ? value * S.slowScale : value;
     },
   };
+
+  // ---------- mouse look (pointer lock) ----------
+  // In a locked game the browser keeps Esc, so losing the lock while playing opens pause, and
+  // going back to play locks again. ctx.ui.pointerLock(canvas) also locks on a click there.
+  function lockElement() {
+    try { return document.pointerLockElement || null; } catch (_e) { return null; }
+  }
+  function requestLock() {
+    const target = S.look.target;
+    if (!target || smoke() || isTouch() || S.screen || typeof target.requestPointerLock !== "function") return;
+    if (lockElement() === target) return;
+    function plain() {
+      try {
+        const asked = target.requestPointerLock();
+        if (asked && typeof asked.catch === "function") asked.catch(noop);
+      } catch (_e) {}
+    }
+    if (!S.look.raw) { plain(); return; }
+    // Raw mouse input (no OS acceleration) when asked for; not every system has it.
+    let asked = null;
+    try { asked = target.requestPointerLock({ unadjustedMovement: true }); } catch (_e) { plain(); return; }
+    if (asked && typeof asked.catch === "function") asked.catch(plain);
+  }
+  function releaseLock() {
+    if (!lockElement()) return;
+    S.look.resumeLock = true;
+    S.look.exitBy = "kit";
+    try { (S.look.exit || document.exitPointerLock).call(document); } catch (_e) {}
+  }
+  // The game letting go itself (document.exitPointerLock) is not the player asking to pause.
+  function watchLockExit() {
+    if (S.look.exit || typeof document.exitPointerLock !== "function") return;
+    const exit = document.exitPointerLock;
+    S.look.exit = exit;
+    document.exitPointerLock = function () {
+      if (lockElement() && S.look.exitBy !== "kit") S.look.exitBy = "game";
+      return exit.apply(document, arguments);
+    };
+  }
+  function onLockChange() {
+    const element = lockElement();
+    if (element) {
+      S.look.used = true;
+      S.look.locked = true;
+      S.look.exitBy = null;
+      S.look.target = S.look.declared || element;
+      if (S.screen) releaseLock();
+      return;
+    }
+    const was = S.look.locked;
+    const by = S.look.exitBy;
+    S.look.locked = false;
+    S.look.exitBy = null;
+    if (!was || by) return;
+    if (S.started && S.pauseEnabled && !S.screen && !smoke()) {
+      S.look.resumeLock = true;
+      S.look.pausedAt = now();
+      pause();
+    }
+  }
+  const lookApi = {
+    get locked() { return Boolean(lockElement()); },
+    lock: function () { requestLock(); },
+    release: function () {
+      if (!lockElement()) return;
+      S.look.exitBy = "game";
+      try { (S.look.exit || document.exitPointerLock).call(document); } catch (_e) {}
+    },
+    get speed() { return num(settingValue("lookSpeed"), 1); },
+    get invert() { return settingValue("invertLook") === true; },
+  };
+  function pointerLock(target, options) {
+    const node = target && typeof target.requestPointerLock === "function" ? target : gameCanvas();
+    if (!node || isTouch()) return lookApi;
+    S.look.raw = Boolean(options && options.raw);
+    S.look.used = true;
+    S.look.declared = node;
+    S.look.target = node;
+    if (S.look.clicks !== node && typeof node.addEventListener === "function") {
+      S.look.clicks = node;
+      listen(node, "click", function () { if (S.started && !S.screen) requestLock(); });
+    }
+    return lookApi;
+  }
+  // While the mouse is locked, movementX/Y follow Look speed and Invert look, so a game's own
+  // movement code obeys the settings (an engine that registers those ids gets raw values).
+  function installLookScaling() {
+    const proto = window.MouseEvent && window.MouseEvent.prototype;
+    if (!proto) return;
+    ["movementX", "movementY"].forEach(function (name) {
+      const desc = Object.getOwnPropertyDescriptor(proto, name);
+      if (!desc || typeof desc.get !== "function" || !desc.configurable || desc.get.diyLook) return;
+      const get = function () {
+        const raw = desc.get.call(this);
+        if (!raw || typeof raw !== "number" || !lockElement()) return raw;
+        let factor = kitOwns("lookSpeed") ? num(settingValue("lookSpeed"), 1) : 1;
+        if (name === "movementY") {
+          S.look.readsY = true;
+          if (kitOwns("invertLook") && settingValue("invertLook") === true) factor = -factor;
+        }
+        return raw * factor;
+      };
+      get.diyLook = true;
+      try {
+        Object.defineProperty(proto, name, { configurable: true, enumerable: desc.enumerable, get: get });
+      } catch (_e) {}
+    });
+  }
+  installLookScaling();
 
   // ---------- frame, input and lifecycle ----------
   // Called by the Pixi ticker (with the ticker) or three's onUpdate (with dt in seconds).
@@ -2413,6 +3541,12 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
       else if (current.confirm) current.confirm();
       return;
     }
+    // A browser that also sends the Esc which freed the mouse must not close the pause it opened.
+    if (event.code === "Escape" && current.name === "pause" && now() - (S.look.pausedAt || -1e9) < 500) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (event.code === "Escape" && current.cancel) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -2448,6 +3582,8 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     S.started = false;
     S.frozen = false;
     S.tickerStopped = false;
+    S.look = { used: false, declared: null, target: null, locked: false, readsY: false, exitBy: null,
+      exit: S.look.exit, clicks: null, resumeLock: false };
   }
   function hookFrames(ctx) {
     if (S.renderer === "pixi" && ctx.app && ctx.app.ticker && typeof ctx.app.ticker.add === "function") {
@@ -2512,9 +3648,14 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     banner: banner,
     gameOver: function (options) { return endScreen("over", options); },
     win: function (options) { return endScreen("win", options); },
+    leaderboard: leaderboard,
     pause: function () { return pause(false); },
     resume: resume,
-    settings: function () { settings(); },
+    settings: settingsApi,
+    controls: function () { controlsPage(); },
+    pointerLock: pointerLock,
+    get lessMotion() { return reducedMotion(); },
+    get softFlashes() { return softFlashes(); },
     button: uiButton,
     get running() { return S.started && !S.screen; },
     get started() { return S.started; },
@@ -2534,16 +3675,36 @@ body.diy-ui-modal #vibe3-controls{visibility:hidden}
     S.restarts = status && typeof status.restarts === "number" ? status.restarts : null;
     ctx.ui = api;
     ctx.fx = fx;
+    defineKitSettings();
+    watchLockExit();
     hookFrames(ctx);
     listen(window, "keydown", onKeyDown, true);
     listen(window, "vibe:game2d:restart_triggered", function () { onRestarted(); });
     listen(window, "resize", onResize);
     listen(document, "visibilitychange", onVisibility);
+    listen(document, "pointerlockchange", onLockChange);
   }
 
   KIT.ui = {
     // The boot smoke and screenshot tools press start: true when a start screen was open.
     start: function () { return S.screen && (S.screen.name === "title" || S.screen.name === "howto") ? startGame() : false; },
+    // preview("title" | "pause" | "settings") shows a game-made menu for a screenshot; preview(null) closes it.
+    preview: function (kind) {
+      if (!kind) {
+        if (S.screen && ["title", "pause", "settings"].indexOf(S.screen.name) >= 0) hideScreen(false);
+        S.titleWaiters.length = 0;
+        return false;
+      }
+      if (kind === "pause" || kind === "settings") {
+        if (!S.started || !hasDesign() || (S.screen && S.screen.name !== "pause")) return false;
+        if (kind === "settings") settings(null);
+        else if (!S.screen) pause(true);
+        return true;
+      }
+      if (kind !== "title" || S.screen || !designOf("title") || !S.titleOptions) return false;
+      title(Object.assign({}, S.titleOptions, { onStart: null, always: true, preview: true }));
+      return true;
+    },
     skins: function () { return Object.keys(CATALOG.skins); },
     fonts: function () { return Object.keys(CATALOG.fonts); },
     keycap: keycap,

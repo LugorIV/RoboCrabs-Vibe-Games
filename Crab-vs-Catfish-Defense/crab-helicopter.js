@@ -37,7 +37,7 @@
     const impactArt = new PIXI.Graphics();
     ctx.layers.world.addChild(impactArt);
     const impacts = [];
-    const flights = Array.from({ length: 36 }, () => {
+    const flights = Array.from({ length: 128 }, () => {
       const view = ctx.assets.sprite("crab-fighter-jet", { size: 25 });
       view.visible = false;
       ctx.layers.world.addChild(view);
@@ -48,8 +48,13 @@
       const jetCount = Math.max(0, Math.min(2, Math.floor(count)));
       let launched = 0;
       for (let i = 0; i < jetCount; i++) {
-        const shot = flights.find(item => !item.view.visible);
-        if (!shot) break;
+        let shot = flights.find(item => !item.view.visible);
+        if (!shot) {
+          // The pool is only for animation; recycling an in-flight sprite must
+          // never act like an ammunition limit on a carrier.
+          shot = flights.reduce((oldest, item) =>
+            item.life / item.duration > oldest.life / oldest.duration ? item : oldest);
+        }
         const side = jetCount === 1 ? 0 : i === 0 ? -1 : 1;
         const offsetX = -Math.sin(angle) * side * 7;
         const offsetY = Math.cos(angle) * side * 7;
@@ -116,7 +121,7 @@
 
     function update(towers) {
       const carriers = towers.filter(tower => tower.type === "crabCarrier");
-      const signature = carriers.map(tower => [tower.slot, tower.x, tower.y, tower.carrierJets, tower.carrierMaxJets].join(":" )).join("|");
+      const signature = carriers.map(tower => [tower.slot, tower.x, tower.y].join(":" )).join("|");
       if (signature === previous) return;
       previous = signature;
       art.clear();
@@ -124,38 +129,24 @@
       for (const tower of carriers) {
         const x = tower.x - 46;
         const y = tower.y + 34;
-        const fraction = tower.carrierMaxJets > 0 ? tower.carrierJets / tower.carrierMaxJets : 0;
         art.rect(x, y, 92, 30).fill(0xfff5d6).stroke({ width: 2, color: 0x14687b });
-        art.rect(x + 10, y + 21, 72, 5).fill(0x9eb9b2);
-        if (fraction > 0) art.rect(x + 10, y + 21, 72 * fraction, 5).fill(0xffa849);
         const label = labels[tower.slot];
-        label.text = "JETS " + tower.carrierJets;
-        label.position.set(tower.x, y + 2);
+        label.text = "JETS ∞";
+        label.position.set(tower.x, y + 5);
         label.visible = true;
       }
     }
 
     return {
-      newTower(type, wave) {
-        if (type !== "crabCarrier") return {};
-        const ready = 2 + wave;
-        return { carrierJets: ready, carrierMaxJets: ready, carrierWave: wave };
+      newTower(type) {
+        return type === "crabCarrier" ? { carrierJets: Infinity } : {};
       },
-      beginWave(towers, wave) {
-        for (const tower of towers) {
-          if (tower.type !== "crabCarrier") continue;
-          tower.carrierJets = 2 + wave;
-          tower.carrierMaxJets = tower.carrierJets;
-          tower.carrierWave = wave;
-        }
+      beginWave(towers) {
         update(towers);
       },
       launch(tower, flights, x, y, tx, ty) {
-        const ready = Math.min(2, tower.carrierJets);
-        if (ready <= 0) return 0;
-        const launched = flights.fire(x, y, tx, ty, ready);
-        tower.carrierJets = Math.max(0, tower.carrierJets - launched);
-        return launched;
+        // Each salvo always has two jets; carrierJets is intentionally never spent.
+        return flights.fire(x, y, tx, ty, 2);
       },
       update
     };

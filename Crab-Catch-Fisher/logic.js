@@ -29,8 +29,13 @@
     let w = 0, h = 0, surface = 0, bottom = 0, anchor = 0;
     let hookY = 0, mode = "idle", caught = null, score = 0, lossCount = 0, pointsInRow = 0;
     let running = false, elapsed = 0, choice = null, maxHealth = 10, health = 10, scareTime = 0;
+    let scareAfter = "idle";
     let spawnTimer = 4;
-    let habitatCount = 0;
+    let quizShown = false;
+    let rangeQuizShown = false;
+    let babyCrabQuizShown = false;
+    let questionText = "", questionRefresh = 0;
+    const isQuestionMode = m => ["question", "habitat-question", "range-question", "baby-crab-question"].includes(m);
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     function resetCrab(c, i) {
       c.x = clamp(anchor + (i - 3.5) * Math.min(55, w * 0.105), 30, w - 30);
@@ -78,8 +83,10 @@
     }
     function startRound() {
       score = 0; lossCount = 0; health = maxHealth; pointsInRow = 0; elapsed = 0; spawnTimer = 4;
-      habitatCount = 0;
-      mode = "idle"; caught = null; scareTime = 0; running = true;
+      quizShown = false;
+      rangeQuizShown = false;
+      babyCrabQuizShown = false;
+      mode = "idle"; caught = null; scareTime = 0; scareAfter = "idle"; running = true;
       catfish.visible = false; catfish.scale.set(1);
       if (choice) { choice.remove(); choice = null; }
       crabs.forEach(c => { c.active = false; c.view.visible = false; c.respawn = 0; });
@@ -101,6 +108,9 @@
         { id: "release", label: "Put Back", icon: "💧" }
       ], { onSelect: choose });
     }
+    function askQuestion(text) {
+      questionText = text; questionRefresh = 0; ctx.ui.banner(text, { size: 18 });
+    }
     function answerCatfish(answer) {
       if (mode !== "question" || !caught) return;
       if (choice) { choice.remove(); choice = null; }
@@ -112,16 +122,11 @@
         ctx.ui.hud.lives(health, maxHealth);
         showCrabActions();
       } else {
-        mode = "scare";
-        scareTime = 1.15;
         health = Math.max(0, health - 6);
         ctx.ui.hud.lives(health, maxHealth);
-        catfish.visible = true;
-        catfish.scale.set(0.18);
-        ctx.ui.banner("Wrong answer... SURPRISE CATFISH!");
-        ctx.fx.shake(0.55);
-        ctx.fx.flash();
-        ctx.sfx.play("creature.screech_01", { volume: 0.8 });
+        ctx.ui.banner("Not quite! Some catfish do eat crabs.");
+        ctx.sfx.play("water.bubble_01");
+        showCrabActions();
       }
     }
     function grab(c) {
@@ -131,7 +136,7 @@
       ctx.sfx.play("pickup.soft_chime_03");
       if (!c.isBig) {
         mode = "question";
-        ctx.ui.banner("Baby crab! Can a catfish eat crabs?");
+        askQuestion("Baby crab! Can a catfish eat crabs?");
         choice = ctx.ui.toolbar([
           { id: "catfish-yes", label: "Yes, sometimes" },
           { id: "catfish-no", label: "No, never" }
@@ -142,7 +147,6 @@
       showCrabActions();
     }
     function crabPoints(c, action) {
-      // Small crabs earn ten points when they are put back.
       if (!c.isBig && action === "release") return 10;
       // Keeping a small crab still costs a life.
       if (!c.isBig) return 0;
@@ -150,6 +154,15 @@
       if (action === "keep") return 4;
       if (action === "release") return 0;
       return null;
+    }
+    function showHabitatQuiz() {
+      quizShown = true;
+      mode = "habitat-question";
+      askQuestion("True or false: Crabs eat crabs.");
+      choice = ctx.ui.toolbar([
+        { id: "crabs-true", label: "True" },
+        { id: "crabs-false", label: "False" }
+      ], { onSelect: answerHabitat });
     }
     function answerHabitat(answer) {
       if (mode !== "habitat-question") return;
@@ -165,16 +178,93 @@
         ctx.ui.banner("Correct! Crabs sometimes eat other crabs.");
         ctx.ui.popup("+3", anchor, surface + 42);
         ctx.sfx.play("pickup.soft_chime_03");
+        showBabyCrabQuizAt40();
       } else {
         pointsInRow = 0;
         ctx.ui.hud.combo(0);
-        ctx.ui.banner("Not quite! Crabs sometimes eat other crabs.");
+        scareAfter = "idle";
+        mode = "scare";
+        scareTime = 1.15;
+        health = Math.max(0, health - 6);
+        ctx.ui.hud.lives(health, maxHealth);
+        catfish.visible = true;
+        catfish.scale.set(0.18);
+        ctx.ui.banner("Wrong answer... SURPRISE CATFISH!");
+        ctx.fx.shake(0.55);
+        ctx.fx.flash();
+        ctx.sfx.play("creature.screech_01", { volume: 0.8 });
+      }
+    }
+    function showRangeQuizAt20() {
+      if (rangeQuizShown || score < 20) return false;
+      rangeQuizShown = true;
+      mode = "range-question";
+      askQuestion("Where are blue crabs native to?");
+      choice = ctx.ui.toolbar([
+        { id: "range-western-atlantic", label: "Western Atlantic" },
+        { id: "range-eastern-pacific", label: "Eastern Pacific" },
+        { id: "range-indian", label: "Indian Ocean" },
+        { id: "range-arctic", label: "Arctic Ocean" }
+      ], { onSelect: answerRangeQuiz });
+      return true;
+    }
+    function answerRangeQuiz(answer) {
+      if (mode !== "range-question") return;
+      if (choice) { choice.remove(); choice = null; }
+      if (answer === "range-western-atlantic") {
+        mode = "idle";
+        score += 3;
+        pointsInRow += 1;
+        ctx.ui.hud.score(score);
+        ctx.ui.hud.combo(pointsInRow);
+        ctx.ui.banner("Correct! They range from Nova Scotia to Argentina.");
+        ctx.ui.popup("+3", anchor, surface + 42);
+        ctx.sfx.play("pickup.soft_chime_03");
+      } else {
+        // The catfish scare belongs only to the 10-point habitat question.
+        mode = "idle";
+        pointsInRow = 0;
+        ctx.ui.hud.combo(0);
+        health = Math.max(0, health - 6);
+        ctx.ui.hud.lives(health, maxHealth);
+        ctx.ui.banner("Not quite! Blue crabs are native to the western Atlantic.");
+        ctx.sfx.play("water.bubble_01");
+      }
+    }
+    function showBabyCrabQuizAt40() {
+      if (babyCrabQuizShown || score < 40) return false;
+      babyCrabQuizShown = true;
+      mode = "baby-crab-question";
+      askQuestion("Which sea animal often eats baby crabs?");
+      choice = ctx.ui.toolbar([
+        { id: "baby-crabs-fish", label: "Bigger blue crabs" },
+        { id: "baby-crabs-seaweed", label: "Seaweed" }
+      ], { onSelect: answerBabyCrabQuiz });
+      return true;
+    }
+    function answerBabyCrabQuiz(answer) {
+      if (mode !== "baby-crab-question") return;
+      if (choice) { choice.remove(); choice = null; }
+      mode = "idle";
+      if (answer === "baby-crabs-fish") {
+        score += 3;
+        pointsInRow += 1;
+        ctx.ui.hud.score(score);
+        ctx.ui.hud.combo(pointsInRow);
+        ctx.ui.banner("Correct! Many bigger fish eat baby crabs.");
+        ctx.ui.popup("+3", anchor, surface + 42);
+        ctx.sfx.play("pickup.soft_chime_03");
+      } else {
+        pointsInRow = 0;
+        ctx.ui.hud.combo(0);
+        ctx.ui.banner("Not quite! Many bigger fish eat baby crabs.");
         ctx.sfx.play("water.bubble_01");
       }
     }
     function choose(action) {
       if (mode !== "choice" || !caught) return;
       const c = caught;
+      const previousScore = score;
       const points = crabPoints(c, action);
       if (points === null) return;
       if (points !== 0) {
@@ -217,14 +307,8 @@
       }
       caught = null; mode = "idle"; hookY = surface + 14;
       if (choice) { choice.remove(); choice = null; }
-      habitatCount += 1;
-      if (habitatCount % 10 === 0) {
-        mode = "habitat-question";
-        ctx.ui.banner("True or false: Crabs eat crabs.");
-        choice = ctx.ui.toolbar([
-          { id: "crabs-true", label: "True" },
-          { id: "crabs-false", label: "False" }
-        ], { onSelect: answerHabitat });
+      if (!showBabyCrabQuizAt40() && !showRangeQuizAt20() && !quizShown && previousScore < 10 && score >= 10 && score <= 20) {
+        showHabitatQuiz();
       }
     }
     function finish() {
@@ -249,6 +333,10 @@
     function update(dt) {
       if (!running) return;
       elapsed += dt;
+      if (isQuestionMode(mode)) {
+        questionRefresh -= dt;
+        if (questionRefresh <= 0) { ctx.ui.banner(questionText, { size: 18 }); questionRefresh = 1.5; }
+      }
       spawnTimer -= dt;
       if (spawnTimer <= 0) {
         spawnCrab();
@@ -263,7 +351,9 @@
         if (scareTime <= 0) {
           catfish.visible = false;
           catfish.rotation = 0;
-          showCrabActions();
+          if (scareAfter === "choice" && caught) showCrabActions();
+          else mode = "idle";
+          scareAfter = "idle";
         }
         return;
       }
@@ -302,7 +392,7 @@
     }
     layout();
     crabs.forEach(resetCrab);
-    ctx.ui.title({ title: "Crab Catch Pier", subtitle: "Cast a hook: catch friendly blue crabs, then choose what to do with your catch." }).then(() => startRound());
+    ctx.ui.title({ title: "Crab Catch Pier", subtitle: "Directions: keep the big crabs, and put baby crabs back in the water." }).then(() => startRound());
     return { update, render: drawHook, reset: startRound, onResize: layout };
   } });
 })();
