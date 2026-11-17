@@ -16,9 +16,18 @@
         lineHeight: 24
       }
     });
+    const backButton = new PIXI.Graphics();
+    const backLabel = new PIXI.Text({ text: "Back to Reef", style: {
+      fontFamily: ctx.ui.fonts.display,
+      fontSize: 18,
+      fontWeight: "bold",
+      fill: "#ffffff",
+      align: "center"
+    } });
+    backLabel.anchor.set(0.5);
     const crabA = ctx.assets.sprite("overhead-crab-tower", { size: 38 });
     const crabB = ctx.assets.sprite("overhead-crab-tower", { size: 38 });
-    panel.addChild(background, crabA, crabB, factText);
+    panel.addChild(background, crabA, crabB, factText, backButton, backLabel);
     ctx.layers.world.addChild(panel);
     panel.visible = false;
     crabA.visible = false;
@@ -38,6 +47,8 @@
     let message = "";
     let cardWidth = 0;
     let iconY = 0;
+    let buttonY = 0;
+    let buttonWidth = 0;
     let feastTime = 0;
 
     function nextFact() {
@@ -62,11 +73,19 @@
       factText.text = message;
       factText.position.set(14, 12);
       iconY = factText.height + 22;
-      const cardHeight = iconY + 42;
+      buttonY = iconY + 48;
+      buttonWidth = Math.min(220, cardWidth - 32);
+      const buttonX = (cardWidth - buttonWidth) / 2;
+      const cardHeight = buttonY + 60;
       background.clear();
       background.rect(0, 0, cardWidth, cardHeight)
         .fill(0xfff8df)
         .stroke({ width: 4, color: 0x14879a });
+      backButton.clear();
+      backButton.roundRect(buttonX, buttonY, buttonWidth, 48, 12)
+        .fill(0x13889a)
+        .stroke({ width: 3, color: 0x0d6577 });
+      backLabel.position.set(cardWidth / 2, buttonY + 24);
       const centerX = cardWidth / 2;
       const progress = Math.min(1, feastTime / 0.7);
       crabA.position.set(centerX - 42 + progress * 28, iconY + 18);
@@ -76,7 +95,7 @@
     }
 
     function show(wave) {
-      message = `Wave ${wave} complete!\n\nBlue-crab fact: ${nextFact()}\n\nAfter each wave: crab-eat-crab snack time!`;
+      message = `Wave ${wave} complete!\n\nBlue-crab fact: ${nextFact()}`;
       panel.visible = true;
       crabA.visible = true;
       crabB.visible = true;
@@ -92,6 +111,18 @@
       feastTime = 0;
     }
 
+    function handlePointer(x, y) {
+      if (!panel.visible) return false;
+      const localX = x - panel.x;
+      const localY = y - panel.y;
+      const buttonLeft = (cardWidth - buttonWidth) / 2;
+      if (localX >= buttonLeft && localX <= buttonLeft + buttonWidth &&
+          localY >= buttonY && localY <= buttonY + 48) {
+        hide();
+      }
+      return true;
+    }
+
     function update(dt) {
       if (!panel.visible || feastTime >= 1.3) return;
       feastTime += dt;
@@ -104,7 +135,7 @@
       if (feastTime >= 1.3) crabA.visible = false;
     }
 
-    return { show, hide, update, layout };
+    return { show, hide, update, layout, handlePointer };
   };
 
   window.createReefQuiz = function (ctx, onItems, onWrong = () => {}, onFastQuiz = () => {}) {
@@ -144,6 +175,97 @@
     let cardWidth = 0;
     let questionStartedAt = 0;
     let allAnswersFast = true;
+    let scareElapsed = 0;
+    let scareDuration = 2.1;
+    let scareImpactPlayed = false;
+    let scareSecondLungePlayed = false;
+    let sharkBaseScale = 1;
+    const scareOverlay = new PIXI.Container();
+    const scareBackdrop = new PIXI.Graphics();
+    const scareFlash = new PIXI.Graphics();
+    const scareTitlePanel = new PIXI.Graphics();
+    const shark = ctx.assets.sprite("quiz-jumpscare-shark", { size: 340 });
+    const scareTitle = new PIXI.Text({ text: "SHARK ATTACK!", style: {
+      fontFamily: ctx.ui.fonts.display, fontSize: 28, fontWeight: "bold", fill: "#ffffff",
+      align: "center"
+    } });
+    scareTitle.anchor.set(0.5);
+    scareOverlay.addChild(scareBackdrop, scareFlash, shark, scareTitlePanel, scareTitle);
+    ctx.layers.ui.addChild(scareOverlay);
+    scareOverlay.visible = false;
+
+    function layoutScare(size) {
+      scareBackdrop.clear();
+      scareBackdrop.rect(0, 0, size.width, size.height).fill(0x061521);
+      scareFlash.clear();
+      scareFlash.rect(0, 0, size.width, size.height).fill(0xd91d3b);
+      scareFlash.alpha = 0;
+      sharkBaseScale = Math.max(0.6, Math.min(3.2, (size.width * 0.98) / 280, (size.height * 0.72) / 190));
+      shark.scale.set(sharkBaseScale);
+      shark.position.set(size.width * 0.4, size.height * 0.53);
+      const titleWidth = Math.min(260, size.width - 32);
+      const titleY = Math.max(18, size.height * 0.09);
+      scareTitlePanel.clear();
+      scareTitlePanel.roundRect((size.width - titleWidth) / 2, titleY, titleWidth, 58, 14)
+        .fill(0x8f1730).stroke({ width: 4, color: 0xff4d64 });
+      scareTitle.position.set(size.width / 2, titleY + 29);
+    }
+
+    function hideSharkScare() {
+      scareOverlay.visible = false;
+      scareElapsed = 0;
+      scareImpactPlayed = scareSecondLungePlayed = false;
+      scareFlash.alpha = 0;
+      shark.rotation = 0;
+      shark.scale.set(sharkBaseScale);
+    }
+
+    function showSharkScare() {
+      layoutScare(ctx.size);
+      scareOverlay.visible = true;
+      scareElapsed = 0;
+      scareImpactPlayed = scareSecondLungePlayed = false;
+      shark.position.set(ctx.size.width + 170 * sharkBaseScale, ctx.size.height * 0.53);
+      shark.scale.set(sharkBaseScale * 0.34);
+      shark.rotation = -0.14;
+      scareFlash.alpha = 0.94;
+      ctx.fx.shake(0.8);
+      ctx.fx.flash();
+      ctx.sfx.play("creature.roar_05", { volume: 0.9, pitch: 0.82 });
+    }
+
+    function updateScare(dt) {
+      if (!scareOverlay.visible) return;
+      scareElapsed += dt;
+      const size = ctx.size;
+      const centerX = size.width * 0.4;
+      const centerY = size.height * 0.53;
+      const approach = Math.min(1, scareElapsed / 0.42);
+      const ease = 1 - Math.pow(1 - approach, 3);
+      const startX = size.width + 170 * sharkBaseScale;
+      if (scareElapsed <= 0.42) {
+        shark.position.set(startX + (centerX - startX) * ease, centerY);
+        shark.scale.set(sharkBaseScale * (0.34 + 0.96 * ease));
+        shark.rotation = -0.14 * (1 - ease);
+      } else {
+        const secondLunge = Math.max(0, 1 - Math.abs(scareElapsed - 1.12) / 0.15);
+        shark.position.set(centerX - secondLunge * size.width * 0.035,
+          centerY + Math.sin(scareElapsed * 10) * size.height * 0.008);
+        shark.scale.set(sharkBaseScale * (1.3 + secondLunge * 0.08 + Math.sin(scareElapsed * 15) * 0.025));
+        shark.rotation = Math.sin(scareElapsed * 13) * 0.025 - secondLunge * 0.025;
+      }
+      scareFlash.alpha = Math.max(0, 0.94 * (1 - scareElapsed / 0.18));
+      if (!scareImpactPlayed && scareElapsed >= 0.3) {
+        scareImpactPlayed = true;
+        ctx.sfx.play("impact.hit_03", { volume: 0.95 });
+        ctx.fx.shake(0.58);
+      }
+      if (!scareSecondLungePlayed && scareElapsed >= 0.97) {
+        scareSecondLungePlayed = true;
+        ctx.fx.shake(0.34);
+      }
+      if (scareElapsed >= scareDuration) hideSharkScare();
+    }
 
     function shuffle(list) {
       const result = list.slice();
@@ -166,6 +288,7 @@
       background.rect(0, 0, cardWidth, 244).fill(0xfff8df)
         .stroke({ width: 4, color: 0x14879a });
       panel.position.set((size.width - cardWidth) / 2, Math.max(8, (size.height - 244) / 2 - 20));
+      layoutScare(size);
     }
 
     function askQuestion() {
@@ -187,6 +310,7 @@
     }
 
     function show() {
+      hideSharkScare();
       active = true;
       stage = "answer";
       deck = shuffle(questions);
@@ -212,6 +336,8 @@
         feedback.text = "Good try! The answer is " + correctAnswer + "." + speedNote;
         missedQuestion = true;
         ctx.ui.banner("MOAB + 15% faster spawns next wave!");
+        showSharkScare();
+        onWrong();
       }
       stage = "feedback";
       onItems([{ id: "quiz-next", label: index === 4 ? "Finish Quiz" : "Next Question", icon: "OK" }]);
@@ -239,6 +365,7 @@
     function finish() {
       if (stage !== "complete") return;
       active = false;
+      hideSharkScare();
       panel.visible = false;
       onItems(null);
     }
@@ -254,6 +381,7 @@
     function hide() {
       const wasActive = active;
       active = false;
+      hideSharkScare();
       missedQuestion = false;
       panel.visible = false;
       if (wasActive) onItems(null);
@@ -265,7 +393,7 @@
       return missed;
     }
 
-    return { show, hide, layout, handle, takeWavePenalty, get active() { return active; } };
+    return { show, hide, layout, update: updateScare, handle, takeWavePenalty, get active() { return active; } };
   };
 })();
 

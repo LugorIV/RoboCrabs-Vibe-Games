@@ -202,6 +202,166 @@
             "path": "assets/library/big-blue-catfish/v2.svg"
           }
         ]
+      },
+      {
+        "key": "hero-blue-crab",
+        "name": "Blue Crab Buddy",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:58Z",
+            "note": "Blue Crab Buddy",
+            "path": "assets/library/hero-blue-crab/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-clownfish",
+        "name": "Sunny Clownfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:58Z",
+            "note": "Sunny Clownfish",
+            "path": "assets/library/hero-clownfish/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-turtle",
+        "name": "Mint Sea Turtle",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:58Z",
+            "note": "Mint Sea Turtle",
+            "path": "assets/library/hero-turtle/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-octopus",
+        "name": "Purple Octopus",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:58Z",
+            "note": "Purple Octopus",
+            "path": "assets/library/hero-octopus/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-seahorse",
+        "name": "Golden Seahorse",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:59Z",
+            "note": "Golden Seahorse",
+            "path": "assets/library/hero-seahorse/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-pufferfish",
+        "name": "Pip the Pufferfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:59Z",
+            "note": "Pip the Pufferfish",
+            "path": "assets/library/hero-pufferfish/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-whale",
+        "name": "Wally the Whale",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:59Z",
+            "note": "Wally the Whale",
+            "path": "assets/library/hero-whale/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "hero-jellyfish",
+        "name": "Jelly the Jellyfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-10T23:59:59Z",
+            "note": "Jelly the Jellyfish",
+            "path": "assets/library/hero-jellyfish/v1.svg"
+          }
+        ]
+      },
+      {
+        "key": "realistic-blue-catfish",
+        "name": "realistic blue catfish",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "image",
+            "source": "ai",
+            "createdAt": "2026-11-16T23:42:53Z",
+            "note": "A highly realistic freshwater blue catfish swimming toward the viewer's right, anatomically believable broad head, blue-gray mottled skin with subtle scale texture, long fine barbels around a natural",
+            "generationId": "gen_d586b79326ad4518838a714b8c57",
+            "url": "https://cdn.diy.org/prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/realistic-blue-catfish/7da7cc24-25a6-4009-8797-753be2c5e0c8.webp",
+            "objectKey": "prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/realistic-blue-catfish/7da7cc24-25a6-4009-8797-753be2c5e0c8.webp",
+            "width": 512,
+            "height": 334,
+            "prompt": "A highly realistic freshwater blue catfish swimming toward the viewer's right, anatomically believable broad head, blue-gray mottled skin with subtle scale texture, long fine barbels around a natural closed mouth, detailed fins and dark reflective eye. Natural photographic specimen realism with gentle studio-like underwater lighting, isolated clean transparent background, whole fish fully visible, no text, no cartoon styling or exaggerated teeth.",
+            "promptKey": "3d4674eb612721d8393080eee598df03",
+            "pictureKind": "sprite"
+          }
+        ]
       }
     ]
   },

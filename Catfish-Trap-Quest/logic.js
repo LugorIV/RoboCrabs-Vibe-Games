@@ -57,8 +57,8 @@
     ctx.layers.world.addChild(catchEffect);
 
     var w = 0, h = 0, left = 0, right = 0, top = 0, bottom = 0;
-    var timeLeft = 20, score = 0, catfishCaught = 0, stillTime = 0, playing = false, stream = null;
-    var placeCooldown = 0, catchEffectTime = 0, nextQuestionIndex = 0, fishSinceQuestion = 0;
+    var timeLeft = 20, score = 0, catfishCaught = 0, stillTime = 0, playing = false;
+    var placeCooldown = 0, catchEffectTime = 0, nextQuestionIndex = 0, fishSinceQuestion = 0, speedBoosted = false;
     var facts = [
       {
         fact: "Catfish Have Year-Round Predation",
@@ -67,7 +67,7 @@
         answer: 2
       },
       {
-        fact: "Catfish Mostly Targeting Smaller Crabs",
+        fact: "Catfish Mostly Targets Smaller Crabs",
         question: "Which crabs do catfish mostly target?",
         choices: ["Mostly smaller crabs", "Mostly the largest crabs", "Only crab eggs", "They do not prey on crabs"],
         answer: 0
@@ -90,7 +90,8 @@
     }
 
     function swimmerSpeed(swimmer) {
-      return (swimmer.kind === "crab" ? 80 : 76) + swimmer.lane * 10;
+      var baseSpeed = (swimmer.kind === "crab" ? 80 : 76) + swimmer.lane * 10;
+      return baseSpeed * (speedBoosted ? 1.35 : 1);
     }
 
     function fishLimits() {
@@ -170,11 +171,11 @@
     }
 
     function reset() {
-      if (stream) { stream.stop(); stream = null; }
       timeLeft = 20;
       score = 0;
       catfishCaught = 0;
       fishSinceQuestion = 0;
+      speedBoosted = false;
       stillTime = 0;
       placeCooldown = 0;
       player.visible = true;
@@ -209,8 +210,7 @@
       factQuiz.reset();
       nextQuestionIndex = 0;
       factQuiz.showFact(facts[nextQuestionIndex]);
-      ctx.music.play("music.calm_acoustic_loop", { fade: 1 });
-      stream = ctx.sfx.loop("ambience.water_loop_01");
+      ctx.music.play("music.the_adventure_begins", { fade: 1 });
     }
 
     function castNet() {
@@ -253,7 +253,6 @@
     function loseGame() {
       if (!playing) return;
       playing = false;
-      if (stream) { stream.stop(); stream = null; }
       ctx.music.stop({ fade: 1 });
       ctx.emit("lose");
       ctx.ui.gameOver({ score: score });
@@ -288,9 +287,10 @@
           }
           nextQuestionIndex = askedIndex + 1;
           fishSinceQuestion = 0;
+          speedBoosted = true;
+          for (var s = 0; s < swimmers.length; s++) swimmers[s].speed = swimmerSpeed(swimmers[s]);
           if (nextQuestionIndex >= facts.length) {
             playing = false;
-            if (stream) { stream.stop(); stream = null; }
             ctx.music.stop({ fade: 1 });
             ctx.emit("win");
             ctx.ui.win({ score: score });
@@ -313,7 +313,7 @@
       placeCooldown = Math.max(0, placeCooldown - dt);
       var previousX = player.x;
       var dx = (ctx.input.isDown("right") ? 1 : 0) - (ctx.input.isDown("left") ? 1 : 0);
-      player.x = clamp(player.x + dx * 230 * dt, left + boatDisplayHalfWidth, right - boatDisplayHalfWidth);
+      player.x = clamp(player.x + dx * 180 * dt, left + boatDisplayHalfWidth, right - boatDisplayHalfWidth);
       player.y = top - boatSurfaceOffset;
       if (Math.abs(player.x - previousX) > 0.5) {
         stillTime = 0;
@@ -386,17 +386,22 @@
       }
     }
 
+    function showInstructions() {
+      playing = false;
+      ctx.ui.title({
+        title: "Catfish Net Boat",
+        subtitle: "Move left/right (or A/D). Press Space/Enter to cast a net. Catch catfish, avoid crabs, and keep moving. Every 5 catfish, answer a question; get 3 right before 20 seconds end to win."
+      }).then(reset);
+    }
+
     layout(ctx.size);
     refreshHud();
-    ctx.ui.title({
-      title: "Catfish Net Boat",
-      subtitle: "Cast your net to scoop up catfish for points and avoid crabs. Keep moving: if your boat stays still for 5 seconds, the game ends."
-    }).then(reset);
+    showInstructions();
 
     return {
       update: update,
       render: function () {},
-      reset: reset,
+      reset: showInstructions,
       onResize: layout
     };
   }});

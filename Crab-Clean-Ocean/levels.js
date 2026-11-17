@@ -3,6 +3,14 @@
     "Sunlit Reef", "Blue Reef", "Twilight Reef", "Dusky Reef", "Dark Reef",
     "Deep Reef", "Kelp Forest", "Coral Canyon", "Turtle Cove", "Ocean Trench"
   ];
+  const questions = [
+    { question: "Where do blue crabs often live?", choices: ["Coastal bays", "Dry deserts", "Tree tops"], answer: 0, fact: "Blue crabs live in coastal bays and estuaries." },
+    { question: "How do blue crabs usually move?", choices: ["By flying", "Sideways", "By rolling"], answer: 1, fact: "Blue crabs can scuttle sideways." },
+    { question: "What protects a crab's body?", choices: ["Soft feathers", "A hard shell", "Thick fur"], answer: 1, fact: "A hard outer shell protects a blue crab." },
+    { question: "How does a crab grow bigger?", choices: ["Molt its shell", "Stretch its claws", "Grow a beak"], answer: 0, fact: "A blue crab molts, shedding its old shell to grow." },
+    { question: "What can blue crabs use claws for?", choices: ["Catch food", "Make bubbles", "Build nests"], answer: 0, fact: "Their claws help blue crabs catch and handle food." },
+    { question: "How can we help blue crabs?", choices: ["Keep water clean", "Leave litter", "Pour oil"], answer: 0, fact: "Clean water helps blue crabs and other ocean life." }
+  ];
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
   function positions(level, total, width, bounds) {
@@ -71,7 +79,7 @@
       const background = new PIXI.Graphics();
       const label = new PIXI.Text({ text: "", style: {
         fontFamily: ctx.ui.fonts.body, fontSize: 18, fontWeight: "700",
-        fill: 0x07516b, wordWrap: true, wordWrapWidth: 250
+        fill: 0x07516b, wordWrap: true, wordWrapWidth: 250, align: "center"
       } });
       view.addChild(background, label);
       view.eventMode = "static";
@@ -86,7 +94,8 @@
       const margin = 14;
       const cardWidth = Math.max(44, Math.min(width - margin * 2,
         width < 500 ? 310 : Math.min(270, Math.max(205, width * 0.28))));
-      const top = height < 380 ? Math.max(50, height * 0.14) : Math.min(height * 0.28, 180);
+      const questionCenter = height * 0.5;
+      const top = Math.max(50, questionCenter - 105);
       const bottom = Math.max(top + 90, height - (height < 720 ? 105 : 125));
       const roomHeight = Math.max(90, bottom - top);
       const gap = 10;
@@ -103,7 +112,7 @@
         let spot = null;
         for (let attempt = 0; attempt < 300 && !spot; attempt++) {
           const xPos = margin + Math.random() * Math.max(0, maxX - margin);
-          const yPos = top + Math.random() * Math.max(0, maxY - top);
+          const yPos = bottom - cardHeight - Math.random() * Math.max(0, maxY - top);
           const clear = placements.every(p =>
             xPos + cardWidth + gap <= p.x || p.x + cardWidth + gap <= xPos ||
             yPos + cardHeight + gap <= p.y || p.y + cardHeight + gap <= yPos);
@@ -159,8 +168,10 @@
   const boostTypes = [
     { id: "speed", label: "Swim faster", icon: "⚡", costs: [30, 50, 75, 105, 140, 180] },
     { id: "reach", label: "Cleanup reach", icon: "🫧", costs: [25, 45, 70, 100, 135] },
-    { id: "time", label: "Extra reef time", icon: "⏱️", costs: [25, 45, 70, 100] },
-    { id: "shells", label: "Shell bonus", icon: "🐚", costs: [35, 60, 90, 125] }
+    { id: "shells", label: "Shell bonus", icon: "🐚", costs: [35, 60, 90, 125] },
+    { id: "score", label: "Pearl polish", icon: "💎", costs: [40, 70, 105, 145] },
+    { id: "scholar", label: "Ocean scholar", icon: "📘", costs: [35, 60, 90] },
+    { id: "shield", label: "Bubble guard", icon: "🛡️", costs: [45, 75, 110, 150, 195] }
   ];
 
   function createBoostShop(ctx, hooks) {
@@ -216,7 +227,95 @@
     return { open, remove };
   }
 
+  function createCharacterRoster(ctx) {
+    const choices = [
+      { name: "Blue Crab", icon: "🦀", key: "hero-blue-crab" },
+      { name: "Clownfish", icon: "🐠", key: "hero-clownfish" },
+      { name: "Sea Turtle", icon: "🐢", key: "hero-turtle" },
+      { name: "Octopus", icon: "🐙", key: "hero-octopus" },
+      { name: "Seahorse", icon: "🐴", key: "hero-seahorse" },
+      { name: "Pufferfish", icon: "🐡", key: "hero-pufferfish" },
+      { name: "Whale", icon: "🐳", key: "hero-whale" },
+      { name: "Jellyfish", icon: "🪼", key: "hero-jellyfish" }
+    ];
+    const views = choices.map(choice => {
+      const view = ctx.assets.sprite(choice.key, { size: 68 });
+      view.visible = false;
+      return view;
+    });
+    return { choices, views };
+  }
+
+  function createCharacterPicker(ctx, views, choices, onChoose) {
+    let toolbar = null;
+    let isOpen = false;
+
+    function layout(width, height) {
+      const columns = width < 500 ? 4 : 8;
+      const rows = Math.ceil(views.length / columns);
+      const gapX = Math.min(78, (width - 36) / columns);
+      const firstY = Math.min(height * 0.32, 190);
+      views.forEach((view, index) => {
+        const col = index % columns;
+        const row = Math.floor(index / columns);
+        view.position.set(width / 2 + (col - (columns - 1) / 2) * gapX,
+          firstY + row * Math.min(74, height * 0.12));
+      });
+    }
+
+    function close() {
+      isOpen = false;
+      if (toolbar) toolbar.remove();
+      toolbar = null;
+    }
+
+    function open(width, height) {
+      close();
+      isOpen = true;
+      layout(width, height);
+      toolbar = ctx.ui.toolbar(choices.map((choice, index) => ({
+        id: "character-" + index,
+        label: choice.name,
+        icon: choice.icon
+      })), {
+        onSelect(id) {
+          const index = Number(id.slice("character-".length));
+          if (!Number.isInteger(index) || !choices[index]) return;
+          close();
+          onChoose(index);
+        }
+      });
+    }
+
+    return {
+      open,
+      close,
+      resize(width, height) {
+        if (isOpen) layout(width, height);
+      }
+    };
+  }
+
   window.ReefLevelLayout = { names, positions, layoutItems, drawDepthTint };
-  window.ReefQuizLayout = { createQuizUi };
-  window.ReefBoostShop = { create: createBoostShop };
+  window.ReefQuizLayout = { names, questions, createQuizUi };
+  window.ReefBoostShop = {
+    create: createBoostShop,
+    status(levels, shields) {
+      return "Swim " + levels.speed + " | Reach " + levels.reach +
+        " | Shells " + levels.shells + " | Pearls " + levels.score +
+        " | Quiz " + levels.scholar + " | Guards " + shields;
+    },
+    purchaseMessage(id, rank, shields) {
+      const messages = {
+        speed: "Swim speed boost!", reach: "Cleanup reach boost!",
+        shells: "More shells for every cleanup!", score: "Pearl polish adds cleanup points!",
+        scholar: "Ocean scholar boosts quiz prizes!", shield: "Bubble guard charge added!"
+      };
+      return messages[id] + (id === "shield" ? " Guards: " + shields + "!" : " Rank " + rank + "!");
+    }
+  };
+  window.ReefCharacterPicker = {
+    create: createCharacterPicker,
+    createRoster: createCharacterRoster
+  };
 })();

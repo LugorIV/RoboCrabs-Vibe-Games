@@ -11,7 +11,8 @@
     "assets/library/crab-runner/v1.js",
     "assets/library/gold-coin/v1.js",
     "assets/library/subway-train/v1.js",
-    "assets/library/track-barrier/v1.js"
+    "assets/library/track-barrier/v1.js",
+    "facts.js"
   ],
   "fileRoles": {
     "assets/library/blue-catfish/v1.js": "script",
@@ -22,6 +23,7 @@
     "assets/manifest.json": "asset-manifest",
     "assets/packs/procedural-assets-2/manifest.json": "runtime-kit-three-asset-pack-manifest",
     "assets/packs/procedural-assets-2/register.js": "runtime-kit-three-asset-pack",
+    "facts.js": "script",
     "index.html": "entry",
     "logic.js": "game-logic",
     "project.manifest.json": "config",
@@ -41,6 +43,7 @@
     "assets/manifest.json": "on_demand",
     "assets/packs/procedural-assets-2/manifest.json": "on_demand",
     "assets/packs/procedural-assets-2/register.js": "on_demand",
+    "facts.js": "primary",
     "index.html": "always",
     "logic.js": "primary",
     "project.manifest.json": "editor_only",
@@ -60,19 +63,20 @@
     "assets/library/gold-coin/v1.js": 6,
     "assets/library/subway-train/v1.js": 7,
     "assets/library/track-barrier/v1.js": 8,
-    "assets/manifest.json": 9,
-    "assets/packs/procedural-assets-2/manifest.json": 10,
-    "assets/packs/procedural-assets-2/register.js": 11,
-    "runtime/asset-library.js": 12,
-    "runtime/input.js": 13,
-    "runtime/models.js": 14,
-    "runtime/sounds.js": 15,
-    "runtime/three-core.js": 16
+    "facts.js": 9,
+    "assets/manifest.json": 10,
+    "assets/packs/procedural-assets-2/manifest.json": 11,
+    "assets/packs/procedural-assets-2/register.js": 12,
+    "runtime/asset-library.js": 13,
+    "runtime/input.js": 14,
+    "runtime/models.js": 15,
+    "runtime/sounds.js": 16,
+    "runtime/three-core.js": 17
   },
   "contentFiles": [],
   "assetManifestPath": "assets/manifest.json",
   "initContract": {
-    "bootPath": "logic.js",
+    "bootPath": "facts.js",
     "requiresImmediateBoot": true,
     "offlineOnly": true,
     "entryHtmlPath": "index.html"
