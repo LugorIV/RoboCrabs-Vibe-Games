@@ -14,59 +14,43 @@
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
   function positions(level, total, width, bounds) {
-    const columns = width < 500 ? 3 : 4;
-    const rows = Math.ceil(total / columns);
-    const spanX = bounds.right - bounds.left;
-    const spanY = bounds.bottom - bounds.top;
+    const spanX = Math.max(1, bounds.right - bounds.left);
+    const spanY = Math.max(1, bounds.bottom - bounds.top);
+    const padX = Math.min(18, spanX * 0.08);
+    const padY = Math.min(18, spanY * 0.06);
+    const minX = bounds.left + padX, maxX = bounds.right - padX;
+    const minY = bounds.top + padY, maxY = bounds.bottom - padY;
+    const centerX = (bounds.left + bounds.right) / 2;
+    const centerY = (bounds.top + bounds.bottom) / 2;
+    const keepOut = Math.min(66, Math.min(spanX, spanY) * 0.22);
+    const targetGap = clamp(Math.sqrt(spanX * spanY / Math.max(1, total)) * 0.48, 32, 58);
     const points = [];
 
+    // Random candidates are spaced apart when possible, while keeping the
+    // player's starting spot clear and every item inside the swim area.
     for (let i = 0; i < total; i++) {
-      const col = i % columns;
-      const row = Math.floor(i / columns);
-      let fx = (col + 0.5) / columns;
-      let fy = (row + 0.5) / rows;
-      switch ((level - 1) % names.length) {
-        case 1:
-          if (row % 2 === 1) fx = 1 - fx;
-          break;
-        case 2:
-          fx += row % 2 === 0 ? 0.12 : -0.12;
-          break;
-        case 3:
-          fx += Math.sin(row * 1.7) * 0.11;
-          break;
-        case 4:
-          fy += col % 2 === 0 ? -0.09 : 0.09;
-          break;
-        case 5:
-          fx += Math.sin((row + col) * 1.3) * 0.13;
-          fy += Math.cos((row - col) * 1.1) * 0.06;
-          break;
-        case 6:
-          fx = 0.5 + (fx - 0.5) * (0.78 + Math.sin(row * 0.8) * 0.16);
-          fy += Math.sin(col * 1.7 + row) * 0.045;
-          break;
-        case 7:
-          if (row % 2 === 1) fx = 1 - fx;
-          fx += Math.sin(row * 1.4) * 0.08;
-          break;
-        case 8:
-          fx += Math.cos(row * 1.1 + col) * 0.17;
-          fy += Math.sin(col * 1.8 + row * 0.6) * 0.06;
-          break;
-        case 9:
-          fx += Math.sin((row + 1) * (col + 1)) * 0.14;
-          fy += (col % 2 === 0 ? -0.08 : 0.08) + Math.cos(row) * 0.035;
-          break;
+      let best = null, bestClearance = -1;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const candidate = {
+          x: minX + Math.random() * Math.max(0, maxX - minX),
+          y: minY + Math.random() * Math.max(0, maxY - minY)
+        };
+        if (Math.hypot(candidate.x - centerX, candidate.y - centerY) < keepOut) continue;
+        const clearance = points.length ? Math.min(...points.map(point =>
+          Math.hypot(candidate.x - point.x, candidate.y - point.y))) : Infinity;
+        if (clearance > bestClearance) {
+          best = candidate;
+          bestClearance = clearance;
+        }
+        if (clearance >= targetGap) break;
       }
-      fx = clamp(fx, 0.07, 0.93);
-      fy = clamp(fy, 0.08, 0.92);
-      let x = bounds.left + spanX * fx;
-      let y = bounds.top + spanY * fy;
-      if (Math.hypot(x - width / 2, y - (bounds.top + bounds.bottom) / 2) < 48) {
-        y = clamp(y + 55, bounds.top + 20, bounds.bottom - 12);
+      if (!best) {
+        best = {
+          x: minX + Math.random() * Math.max(0, maxX - minX),
+          y: minY + Math.random() * Math.max(0, maxY - minY)
+        };
       }
-      points.push({ x, y });
+      points.push(best);
     }
     return points;
   }
@@ -91,55 +75,28 @@
     });
 
     function layout(choices, width, height) {
-      const margin = 14;
-      const cardWidth = Math.max(44, Math.min(width - margin * 2,
-        width < 500 ? 310 : Math.min(270, Math.max(205, width * 0.28))));
-      const questionCenter = height * 0.5;
-      const top = Math.max(50, questionCenter - 105);
-      const bottom = Math.max(top + 90, height - (height < 720 ? 105 : 125));
-      const roomHeight = Math.max(90, bottom - top);
-      const gap = 10;
-      const cardHeight = Math.max(44, Math.min(64, (roomHeight - gap * 2) / 3));
-      const maxX = Math.max(margin, width - margin - cardWidth);
-      const maxY = Math.max(top, bottom - cardHeight);
-      const order = [0, 1, 2];
-      for (let i = order.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [order[i], order[j]] = [order[j], order[i]];
-      }
-      const placements = [];
-      for (const index of order) {
-        let spot = null;
-        for (let attempt = 0; attempt < 300 && !spot; attempt++) {
-          const xPos = margin + Math.random() * Math.max(0, maxX - margin);
-          const yPos = bottom - cardHeight - Math.random() * Math.max(0, maxY - top);
-          const clear = placements.every(p =>
-            xPos + cardWidth + gap <= p.x || p.x + cardWidth + gap <= xPos ||
-            yPos + cardHeight + gap <= p.y || p.y + cardHeight + gap <= yPos);
-          if (clear) spot = { index, x: xPos, y: yPos };
-        }
-        if (!spot) break;
-        placements.push(spot);
-      }
-      if (placements.length < 3) {
-        placements.length = 0;
-        const rowGap = Math.max(0, (roomHeight - cardHeight * 3) / 2);
-        order.forEach((index, row) => placements.push({
-          index,
-          x: margin + Math.random() * Math.max(0, maxX - margin),
-          y: top + row * (cardHeight + rowGap)
-        }));
-      }
-      placements.forEach(({ index, x: xPos, y: yPos }) => {
+      const margin = 10;
+      const gap = 8;
+      const cardWidth = Math.min(270, Math.max(44,
+        (width - margin * 2 - gap * 2) / 3));
+      const cardHeight = Math.min(112, Math.max(76, height * 0.15));
+      const rowWidth = cardWidth * 3 + gap * 2;
+      const firstX = Math.max(margin, (width - rowWidth) / 2);
+      const yPos = clamp(height * 0.56 - cardHeight / 2,
+        48, Math.max(48, height - cardHeight - 100));
+
+      // Keep the answer choices in one predictable horizontal row. Their
+      // narrow phone-sized cards wrap the labels but remain easy to tap.
+      choices.forEach((choice, index) => {
         const card = cards[index];
-        card.label.text = (index + 1) + ". " + choices[index];
-        card.label.style.wordWrapWidth = Math.max(40, cardWidth - 28);
-        card.label.x = 14;
+        card.label.text = (index + 1) + ". " + choice;
+        card.label.style.wordWrapWidth = Math.max(40, cardWidth - 24);
+        card.label.x = 12;
         card.label.y = Math.max(6, (cardHeight - card.label.height) / 2);
         card.background.clear()
           .rect(0, 0, cardWidth, cardHeight).fill(0xe8fbff)
           .rect(0, 0, cardWidth, cardHeight).stroke({ width: 3, color: 0x1686bc });
-        card.view.position.set(xPos, yPos);
+        card.view.position.set(firstX + index * (cardWidth + gap), yPos);
         card.view.hitArea = new PIXI.Rectangle(0, 0, cardWidth, cardHeight);
         card.view.visible = true;
       });
@@ -149,12 +106,22 @@
     return { layer, cards, layout };
   }
 
-  function layoutItems(items, total, level, width, bounds) {
-    const points = positions(level, total, width, bounds);
-    points.forEach((point, i) => {
-      const item = items[i];
-      item.x = point.x;
-      item.y = point.y;
+  let laidOutLevel = null, laidOutTotal = -1;
+  function layoutItems(items, total, level, width, bounds, forceReroll) {
+    const reroll = forceReroll || level !== laidOutLevel || total !== laidOutTotal ||
+      items.slice(0, total).some(item => !Number.isFinite(item.layoutX) || !Number.isFinite(item.layoutY));
+    if (reroll) {
+      const points = positions(level, total, width, bounds);
+      points.forEach((point, i) => {
+        items[i].layoutX = (point.x - bounds.left) / Math.max(1, bounds.right - bounds.left);
+        items[i].layoutY = (point.y - bounds.top) / Math.max(1, bounds.bottom - bounds.top);
+      });
+      laidOutLevel = level;
+      laidOutTotal = total;
+    }
+    items.slice(0, total).forEach(item => {
+      item.x = bounds.left + item.layoutX * (bounds.right - bounds.left);
+      item.y = bounds.top + item.layoutY * (bounds.bottom - bounds.top);
       item.view.position.set(item.x, item.y);
     });
   }

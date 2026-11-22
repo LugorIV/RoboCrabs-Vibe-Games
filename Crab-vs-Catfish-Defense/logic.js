@@ -17,7 +17,7 @@
       net: "reef-net-coral-3d",
       spike: "reef-puffer-spike-3d",
       sonar: "reef-sonar-shell-3d",
-      bloom: "reef-kelp-bloom-3d", crabTank: "crab-tank-tower", crabHeli: "crab-helicopter-tower", crabJet: "crab-fighter-jet", crabCarrier: "crab-aircraft-carrier-tower"
+      bloom: "reef-kelp-bloom-3d", crabTank: "crab-tank-tower", crabHeli: "crab-helicopter-tower", crabJet: "crab-fighter-jet", crabCarrier: "crab-aircraft-carrier-tower", crabSub: "crab-submarine"
     };
     const fishArt = ["blue-catfish", "gold-catfish", "violet-catfish"];
     const enemyTint = [0x7df9ff, 0xffe56b, 0xd8a7ff];
@@ -35,7 +35,7 @@
     const towerViews = Array.from({ length: 64 }, () => {
       const views = {};
       for (const [type, key] of Object.entries(towerArt)) {
-        const view = ctx.assets.sprite(key, { size: type === "crabJet" ? 82 : type === "crabCarrier" ? 100 : 62 });
+        const view = ctx.assets.sprite(key, { size: type === "crabJet" ? 82 : type === "crabCarrier" ? 100 : type === "crabSub" ? 76 : 62 });
         view.visible = false;
         ctx.layers.world.addChild(view);
         views[type] = view;
@@ -128,7 +128,7 @@
       { id: "net", label: "Net", icon: "🕸️", cost: 65 },
       { id: "spike", label: "Spikes", icon: "⭐", cost: 45 },
       { id: "sonar", label: "Sonar", icon: "🐚", cost: 85 },
-      { id: "bloom", label: "Kelp bloom", icon: "🌺", cost: 60 }, { id: "crabTank", label: "Crab tank", icon: "🦀", cost: 90 }, { id: "crabHeli", label: "Crab heli", icon: "🚁", cost: 90 }, { id: "crabJet", label: "Crab jet", icon: "✈️", cost: 90 },
+      { id: "bloom", label: "Kelp bloom", icon: "🌺", cost: 60 }, { id: "crabTank", label: "Crab tank", icon: "🦀", cost: 90 }, { id: "crabHeli", label: "Crab heli", icon: "🚁", cost: 90 }, { id: "crabJet", label: "Crab jet", icon: "✈️", cost: 90 }, { id: "crabSub", label: "Crab submarine", picture: "crab-submarine", cost: 90 },
       { id: "worlds", label: "Worlds", icon: "🌍" }
     ];
     let toolbar;
@@ -176,6 +176,7 @@
       drawBoard(); hud();
     }
     toolbar = ctx.ui.toolbar(buildTools, {
+      size: "large",
       selected: selectedTower,
       onSelect: id => {
         if (quiz && quiz.active) { quiz.handle(id); updateWaveButton(); }
@@ -196,7 +197,7 @@
         else {
           selectedTower = id;
           focusedTower = null;
-          ctx.ui.banner(id === "crabCarrier" ? "Aircraft carrier selected! Place it off the path." : id + " tower selected. Place anywhere off the path!");
+          ctx.ui.banner(id === "crabCarrier" ? "Aircraft carrier selected! Place it off the path." : id === "crabSub" ? "Crab submarine selected! Place it off the path." : id + " tower selected. Place anywhere off the path!");
         }
       }
     });
@@ -206,21 +207,12 @@
       onSend: () => { running = true; crabFacts.hide(); syncBossMusic(); }
     });
     quiz = window.createReefQuiz(ctx, items => items ? toolbar.setItems(items) : showBuildTools(), undefined, () => crabBadge.award());
-    function distanceToRoute(x, y) {
-      let nearest = Infinity;
-      for (let i = 1; i < points.length; i++) {
-        const a = points[i - 1], b = points[i];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)));
-        nearest = Math.min(nearest, Math.hypot(x - a.x - t * dx, y - a.y - t * dy));
-      }
-      return nearest;
-    }
+    const distanceToRoute = (x, y) => worlds.distanceToRoute(points, x, y);
     function place(x, y) {
-      const costs = { bubble: 50, cannon: 75, net: 65, spike: 45, sonar: 85, bloom: 60, crabTank: 90, crabHeli: 90, crabJet: 90, crabCarrier: 300 };
+      const costs = { bubble: 50, cannon: 75, net: 65, spike: 45, sonar: 85, bloom: 60, crabTank: 90, crabHeli: 90, crabJet: 90, crabCarrier: 300, crabSub: 90 };
       const cost = costs[selectedTower];
       const tooClose = towers.some(tower => Math.hypot(tower.x - x, tower.y - y) < 58);
-      const margin = selectedTower === "crabCarrier" ? 52 : 34;
+      const margin = selectedTower === "crabCarrier" ? 52 : selectedTower === "crabSub" ? 40 : 34;
       if (x < margin || x > boardWidth - margin || y < top + margin || y > top + height - margin || distanceToRoute(x, y) < 58 || tooClose) {
         ctx.sfx.play("impact.bonk_cartoon_synth_03");
         ctx.ui.popup("Place off the path with room!", x, y);
@@ -289,7 +281,7 @@
         const { x, y } = ctx.input.pointer;
         if (crabFacts.handlePointer(x, y)) return;
         if (freePlayMode && freePlayMode.sidebar.handlePointer(x, y)) return;
-        const tower = towers.find(item => Math.hypot(x - item.x, y - item.y) < (item.type === "crabCarrier" ? 54 : 36));
+        const tower = towers.find(item => Math.hypot(x - item.x, y - item.y) < (item.type === "crabCarrier" ? 54 : item.type === "crabSub" ? 42 : 36));
         if (tower) {
           showUpgradeTools(tower);
           ctx.ui.banner("Upgrade this tower: damage, range, or fire rate!");
@@ -337,13 +329,13 @@
           }
         }
         if (!target) continue;
-        if (tower.type === "crabJet") towerViews[tower.slot].crabJet.rotation = Math.atan2(target.view.y - p.y, target.view.x - p.x);
+        if (tower.type === "crabJet" || tower.type === "crabSub") towerViews[tower.slot][tower.type].rotation = Math.atan2(target.view.y - p.y, target.view.x - p.x) + (tower.type === "crabSub" ? Math.PI / 2 : 0);
         tower.cooldown = spec.cooldown;
         const hitX = target.view.x, hitY = target.view.y;
         if (tower.type === "crabHeli" || tower.type === "crabJet") heliShots.fire(p.x, p.y, hitX, hitY); else if (tower.type === "crabCarrier") carrierMeter.launch(tower, carrierFlights, p.x, p.y, hitX, hitY); else bolts.push({ x: p.x, y: p.y, tx: hitX, ty: hitY, life: .17, ...spec });
         if (tower.type === "net") target.slowTimer = 1.8;
-        const radius = tower.type === "crabTank" ? 76 : tower.type === "cannon" ? 48 : tower.type === "sonar" ? 64 : tower.type === "crabHeli" ? 38 : tower.type === "crabJet" ? 46 : tower.type === "crabCarrier" ? 86 : 0;
-        const splashRocket = tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier";
+        const radius = tower.type === "crabTank" ? 76 : tower.type === "cannon" ? 48 : tower.type === "sonar" ? 64 : tower.type === "crabHeli" ? 38 : tower.type === "crabJet" ? 46 : tower.type === "crabCarrier" ? 86 : tower.type === "crabSub" ? 54 : 0;
+        const splashRocket = tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier" || tower.type === "crabSub";
         const splashDamage = splashRocket || radius > 0;
         const hits = fish.filter(enemy => enemy === target ||
           (radius && Math.hypot(enemy.view.x - hitX, enemy.view.y - hitY) < radius));
@@ -352,7 +344,7 @@
           bosses.damage(enemy, crabBadge.applyDamage(enemy === target ? spec.damage : 1), splashDamage);
           if (enemy.hp <= 0) removeFish(enemy, false);
         }
-        ctx.sfx.play(tower.type === "cannon" || tower.type === "crabTank" || tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier" ? "impact.bonk_cartoon_synth_03" : "ui.bubble_pop_synth_02", { volume: .26 });
+        ctx.sfx.play(tower.type === "cannon" || tower.type === "crabTank" || tower.type === "crabHeli" || tower.type === "crabJet" || tower.type === "crabCarrier" || tower.type === "crabSub" ? "impact.bonk_cartoon_synth_03" : "ui.bubble_pop_synth_02", { volume: .26 });
       }
       for (let i = bolts.length - 1; i >= 0; i--) {
         bolts[i].life -= dt;
@@ -391,7 +383,7 @@
       showBuildTools();
       effects.clear(); healthArt.clear(); drawBoard(); hud();
       bossMusicActive = false;
-      ctx.music.play("music.short_theme_melon_it_rock_rhythm_4", { fade: 1 });
+      ctx.music.play("music.short_theme_melon_it_rock_rhythm_4", { fade: 1, pitch: 1.08 });
     }
     layout(ctx.size);
     hud();

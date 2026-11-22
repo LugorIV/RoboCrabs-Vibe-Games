@@ -138,7 +138,7 @@
       if (score >= nextFactScore) {
         const fact = factQuestions[nextFactIndex % factQuestions.length];
         nextFactIndex++;
-        pendingQuiz = { ...fact, dueScore: nextFactScore + 200 };
+        pendingQuiz = { ...fact, dueScore: nextFactScore + 300 };
         nextFactScore += 300;
         startFact(fact);
         return true;

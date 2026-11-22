@@ -210,7 +210,11 @@
       factQuiz.reset();
       nextQuestionIndex = 0;
       factQuiz.showFact(facts[nextQuestionIndex]);
-      ctx.music.play("music.the_adventure_begins", { fade: 1 });
+      ctx.music.playlist([
+        "music.funshine",
+        "music.puppylandclean",
+        "music.upbeat_chiptune_theme"
+      ], { random: true });
     }
 
     function castNet() {

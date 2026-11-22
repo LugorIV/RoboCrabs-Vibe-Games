@@ -820,6 +820,23 @@
             "path": "assets/library/quiz-jumpscare-shark/v1.svg"
           }
         ]
+      },
+      {
+        "key": "crab-submarine",
+        "name": "Crab Submarine",
+        "dimension": "2d",
+        "current": "v1",
+        "pending": null,
+        "versions": [
+          {
+            "id": "v1",
+            "kind": "svg",
+            "source": "ai",
+            "createdAt": "2026-11-22T20:26:08Z",
+            "note": "Crab Submarine",
+            "path": "assets/library/crab-submarine/v1.svg"
+          }
+        ]
       }
     ]
   },
@@ -1795,5 +1812,5 @@
     "music.short_theme_melon_it_rock_rhythm_4": "Main theme",
     "music.battle_vs_gyokaijuu": "Boss fight"
   },
-  "musicUsesKey": "5ff7f507ec0ccbe5"
+  "musicUsesKey": "3da1bd532d3429b8"
 }

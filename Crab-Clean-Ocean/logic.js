@@ -7,6 +7,8 @@
       { id: "up", label: "Swim up", keys: ["ArrowUp", "KeyW"] },
       { id: "down", label: "Swim down", keys: ["ArrowDown", "KeyS"] }
     ] });
+    // The kit places this picture on the background layer, beneath the reef,
+    // so the playfield stays scenic without covering the game artwork.
     ctx.assets.background("sunny-reef", { fit: "cover" });
     const depthTint = new PIXI.Graphics();
     const shadow = new PIXI.Graphics();
@@ -157,7 +159,7 @@
         item.view.alpha = 1;
         item.view.visible = item.active;
       });
-      ReefLevelLayout.layoutItems(items, total, level, width, bounds);
+      ReefLevelLayout.layoutItems(items, total, level, width, bounds, true);
       ReefLevelLayout.drawDepthTint(depthTint, width, height, level, LEVEL_COUNT);
       hud();
       const danger = dangerLevel();
