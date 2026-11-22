@@ -27,12 +27,10 @@
         removeButtons();
         if (!correct) {
           removePrompt();
-          phase = "";
-          remaining = 0;
-          ctx.ui.hud.text("quiz", "");
-          var complete = afterAnswer;
-          afterAnswer = null;
-          if (complete) complete(false);
+          phase = "feedback";
+          remaining = 2.6;
+          openPrompt("Not quite! The correct answer is: " + card.choices[card.answer], remaining);
+          ctx.ui.hud.text("quiz", "Correct answer: " + card.choices[card.answer]);
           return;
         }
         phase = "feedback";

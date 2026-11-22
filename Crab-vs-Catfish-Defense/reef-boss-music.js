@@ -6,7 +6,7 @@
       return wasActive;
     }
     if (hasBoss === wasActive) return wasActive;
-    ctx.music.play(hasBoss ? "music.battle_vs_gyokaijuu" : "music.short_theme_melon_it_rock_rhythm_4", { fade: 1 });
+    ctx.music.play(hasBoss ? "music.battle_vs_gyokaijuu" : "music.short_theme_melon_it_rock_rhythm_4", { fade: 1, pitch: hasBoss ? 1 : 1.08 });
     return hasBoss;
   };
 })();

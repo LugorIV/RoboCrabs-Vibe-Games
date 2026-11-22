@@ -108,7 +108,7 @@
         "key": "sunny-reef",
         "name": "sunny reef",
         "dimension": "2d",
-        "current": "v1",
+        "current": "v2",
         "pending": null,
         "versions": [
           {
@@ -133,6 +133,33 @@
               },
               "strip": {
                 "url": "https://cdn.diy.org/prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/sunny-reef/cf7be721-5c55-4dc5-9ed0-552a6327477f.webp",
+                "width": 1344,
+                "height": 864
+              }
+            }
+          },
+          {
+            "id": "v2",
+            "kind": "image",
+            "source": "ai",
+            "createdAt": "2026-11-22T20:36:43Z",
+            "note": "A bright cheerful underwater ocean reef scene for a colorful arcade game, clear turquoise-blue water with soft sunbeams from the surface, distant colorful coral and sea plants framing the lower corner",
+            "generationId": "gen_62fa089b614744818d6b35809adb",
+            "url": "https://cdn.diy.org/prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/sunny-reef/92a57c7d-64eb-48d5-bc5d-3d0e79d0a934.webp",
+            "objectKey": "prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/sunny-reef/92a57c7d-64eb-48d5-bc5d-3d0e79d0a934.webp",
+            "width": 1536,
+            "height": 864,
+            "prompt": "A bright cheerful underwater ocean reef scene for a colorful arcade game, clear turquoise-blue water with soft sunbeams from the surface, distant colorful coral and sea plants framing the lower corners and edges, tiny distant fish silhouettes, a wide uncluttered open blue center for gameplay, vivid sunny daylight, polished friendly 2D illustration, no words or letters",
+            "promptKey": "a04104fd9ac708a7a90ce7906f356208",
+            "pictureKind": "background",
+            "variants": {
+              "phone": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/sunny-reef/71d5c949-d58f-4e17-a66e-9468a8587c24.webp",
+                "width": 576,
+                "height": 1024
+              },
+              "strip": {
+                "url": "https://cdn.diy.org/prod/projects/vibecode/f52922efb74f442cb0d30a30cfab6ef2/assets/sunny-reef/aa20d876-99be-4511-9a89-50137eba0ebc.webp",
                 "width": 1344,
                 "height": 864
               }
